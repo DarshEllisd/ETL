@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-06-24T08:42:21Z",
+  "stats": {
+    "total_files_anonymized": 3,
+    "total_emails_scrubbed": 2,
+    "total_phones_scrubbed": 2,
+    "total_passwords_scrubbed": 0,
+    "total_addresses_scrubbed": 0,
+    "total_names_scrubbed": 0
+  },
+  "scrubbed_details": [
+    {
+      "conversation_id": "email_thread_c594e1d3c87a01c7027e0e89377593de_session_0",
+      "file": "email_thread_c594e1d3c87a01c7027e0e89377593de_session_0.json",
+      "emails_scrubbed": 1,
+      "phones_scrubbed": 1,
+      "passwords_scrubbed": 0,
+      "addresses_scrubbed": 0,
+      "names_scrubbed": 0
+    },
+    {
+      "conversation_id": "whatsapp_chat_cd4fb49f9acb9d6bb54456e9774ce154_session_0",
+      "file": "whatsapp_chat_cd4fb49f9acb9d6bb54456e9774ce154_session_0.json",
+      "emails_scrubbed": 1,
+      "phones_scrubbed": 1,
+      "passwords_scrubbed": 0,
+      "addresses_scrubbed": 0,
+      "names_scrubbed": 0
+    }
+  ]
+}

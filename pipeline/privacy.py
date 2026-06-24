@@ -28,6 +28,7 @@ class PrivacyScrubber:
         self.phone_regex = re.compile(
             r'\+?\b(?:\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b|' # US/Intl 3-3-4
             r'\+?\b(?:\d{1,3}[-.\s]?)?\d{2}[-.\s]?\d{4}[-.\s]?\d{4}\b|'       # UK 2-4-4
+            r'\+?\b(?:44\s?|0)7\d{3}[-.\s]?\d{6}\b|'                          # UK Mobile 5-6
             r'\+?\b(?:\d{1,3}[-.\s]?)?\d{5}[-.\s]?\d{5}\b'                    # India/others 5-5
         )
 
@@ -40,8 +41,8 @@ class PrivacyScrubber:
         # Matches standard street addresses and postal zip codes:
         # e.g., 123 Main St, 456 Maple Avenue, 10001
         self.address_regex = re.compile(
-            r'\b\d+\s+[A-Za-z0-9\s,\.]+?\s+(Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Boulevard|Blvd|Drive|Dr|Way|Court|Ct)\b|'
-            r'\b\d{5}(-\d{4})?\b', re.IGNORECASE
+            r'\b\d+\s+[A-Za-z0-9\s,\.]+?\s+(Street|St|Avenue|Ave|Road|Rd|Lane|Ln|Boulevard|Blvd|Drive|Dr|Way|Court|Ct|Parkway|Pkwy|Plaza|Plz|Place|Pl|Square|Sq|Terrace|Ter|Highway|Hwy)\b|'
+            r'(?<![#$€£])\b\d{5}(-\d{4})?\b', re.IGNORECASE
         )
 
     def scrub_text(self, text: str, participant_names: List[str] = None) -> Dict[str, Any]:

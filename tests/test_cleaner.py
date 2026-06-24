@@ -19,25 +19,57 @@ class TestConversationCleaner(unittest.TestCase):
         shutil.rmtree(self.test_dir)
 
     def test_strip_signature_sent_from_iphone(self):
-        text = "Hello Bob,\n\nI need help with my tracking.\n\nSent from my iPhone"
-        cleaned = self.cleaner.clean_signatures(text)
-        self.assertEqual(cleaned, "Hello Bob,\n\nI need help with my tracking.")
+        devices = [
+            ("Hello Bob,\n\nI need help with my tracking.\n\nSent from my iPhone", "Hello Bob,\n\nI need help with my tracking."),
+            ("Hello Bob,\n\nSent from my Samsung Galaxy", "Hello Bob,"),
+            ("Hello Bob,\nSent from my Android phone", "Hello Bob,"),
+            ("Hello Bob,\nSent from mobile", "Hello Bob,"),
+            ("Hello Bob,\nSent from my phone", "Hello Bob,"),
+            ("Hello Bob,\nSent from my iPad", "Hello Bob,"),
+            ("Hello Bob,\nSent from my mail", "Hello Bob,"),
+        ]
+        for input_text, expected in devices:
+            cleaned = self.cleaner.clean_signatures(input_text)
+            self.assertEqual(cleaned, expected)
 
     def test_strip_signature_best_regards(self):
-        text = "Hi Jane,\nPlease process the order.\n\nBest regards,\nJohn"
-        cleaned = self.cleaner.clean_signatures(text)
-        self.assertEqual(cleaned, "Hi Jane,\nPlease process the order.")
+        closings = [
+            ("Hi Jane,\nPlease process the order.\n\nBest regards,\nJohn", "Hi Jane,\nPlease process the order."),
+            ("Hi Jane,\nPlease process the order.\n\nSincerely,\nAlice", "Hi Jane,\nPlease process the order."),
+            ("Hi Jane,\nPlease process the order.\n\nThanks,\nSupport Team", "Hi Jane,\nPlease process the order."),
+            ("Hi Jane,\nPlease process the order.\n\nWarm regards,\nJane Doe", "Hi Jane,\nPlease process the order."),
+            ("Hi Jane,\nPlease process the order.\n\nRegards", "Hi Jane,\nPlease process the order."),
+            ("Hi Jane,\nPlease process the order.\n\nThank you,\nJohn", "Hi Jane,\nPlease process the order."),
+            ("Hi Jane,\nPlease process the order.\n\nSincerely\nJohn\nManager\nShop.com", "Hi Jane,\nPlease process the order.")
+        ]
+        for input_text, expected in closings:
+            cleaned = self.cleaner.clean_signatures(input_text)
+            self.assertEqual(cleaned, expected)
 
     def test_is_autoreply(self):
         self.assertTrue(self.cleaner.is_autoreply("I am out of office until Monday."))
         self.assertTrue(self.cleaner.is_autoreply("This is an Automatic Reply regarding your email."))
+        self.assertTrue(self.cleaner.is_autoreply("Do-not-reply to this email directly."))
+        self.assertTrue(self.cleaner.is_autoreply("This is an auto-reply message."))
         self.assertFalse(self.cleaner.is_autoreply("Hi, can you help me?"))
 
     def test_is_low_quality(self):
-        self.assertTrue(self.cleaner.is_low_quality("ok"))
-        self.assertTrue(self.cleaner.is_low_quality("thanks!"))
-        self.assertTrue(self.cleaner.is_low_quality(" 👍 "))
-        self.assertFalse(self.cleaner.is_low_quality("Okay, I will send the code now."))
+        low_quality = [
+            "ok", "OK", "ok.", "ok!", "   ok   ", "k", "K.", "K!",
+            "thanks", "Thanks.", "thanks!", "👍",
+            "hello", "hi", "Hi.", "thank you", "Thank you."
+        ]
+        for text in low_quality:
+            self.assertTrue(self.cleaner.is_low_quality(text))
+
+        valid_short = [
+            "Okay, I will send the code now.",
+            "hello, how can I help?",
+            "thanks for the quick response!",
+            "yes, please."
+        ]
+        for text in valid_short:
+            self.assertFalse(self.cleaner.is_low_quality(text))
 
     def test_clean_conversation_full(self):
         conv = {

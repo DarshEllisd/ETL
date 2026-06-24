@@ -33,7 +33,7 @@ class ConversationCleaner:
         # 1. Matches common "Sent from my..." lines
         # 2. Matches common email signature closers like "Best regards,", "Thanks," followed by name/empty space at the end of the text
         self.signature_regexes = [
-            re.compile(r'^sent\s+from\s+my\s+(iphone|android|ipad|samsung|mobile|mail|phone).*$', re.IGNORECASE),
+            re.compile(r'^sent\s+from\s+(?:my\s+)?(iphone|android|ipad|samsung|mobile|mail|phone).*$', re.IGNORECASE),
             re.compile(r'^(best\s+regards|sincerely|thanks|regards|warm\s+regards|thank\s+you),?\s*$', re.IGNORECASE)
         ]
 
