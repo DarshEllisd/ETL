@@ -1,4 +1,9 @@
 [24/06/2026, 10:15:30] +1 (555) 019-9234: Hey Jane, did you hear back from support about the order?
-[24/06/2026, 10:16:12] Jane Doe: Not yet. I emailed them this morning.
-Hopefully they reply soon.
-[24/06/2026, 10:17:01] +1 (555) 019-9234: Let me know when they do!
+[24/06/2026, 10:16:12] Jane Doe: I am currently out of office and will reply later.
+[24/06/2026, 10:16:30] Jane Doe: Sorry for that. No support reply yet. Contact support@shop.com or call 555-019-9234.
+Best regards,
+Jane Doe
+[24/06/2026, 10:16:30] Jane Doe: Sorry for that. No support reply yet. Contact support@shop.com or call 555-019-9234.
+Best regards,
+Jane Doe
+[24/06/2026, 10:17:01] +1 (555) 019-9234: ok
