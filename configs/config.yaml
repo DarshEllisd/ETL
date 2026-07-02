@@ -58,6 +58,22 @@ dataset:
   metadata_filename: "metadata.json"
   statistics_filename: "statistics.json"
 
+# Annotation settings
+annotation:
+  enabled: true
+  api_key_env: "GROQ_API_KEY"
+  model: "llama-3.1-8b-instant"
+  intent_filename: "intent_labels.jsonl"
+  sentiment_filename: "sentiment_labels.jsonl"
+  summary_filename: "summaries.jsonl"
+
+# RAG configuration settings
+rag:
+  enabled: true
+  chunk_size_turns: 4
+  chunk_overlap_turns: 2
+  rag_filename: "rag_chunks.jsonl"
+
 # Logging configuration
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR

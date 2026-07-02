@@ -11,7 +11,7 @@ from connectors import GmailConnector, WhatsAppConnector
 from pipeline import (
     GmailNormalizer, WhatsAppNormalizer, ConversationMerger,
     ThreadBuilder, ConversationValidator, ConversationCleaner,
-    PrivacyScrubber, DatasetGenerator
+    PrivacyScrubber, DatasetGenerator, ConversationAnnotator, RAGGenerator
 )
 
 class JSONFormatter(logging.Formatter):
@@ -246,6 +246,53 @@ def run_pipeline(config: dict, step: str = None):
         generator.generate_statistics(stats_fn)
         logger.info(f"Exported dataset JSONL, metadata summary, and statistics report to '{datasets_dir}'.")
         
+    # 8. Annotate Step
+    if run_all or step == "annotate":
+        logger.info("Stage 8: Generating LLM-assisted advanced annotations (intents, sentiment, summaries)...")
+        anonymized_dir = os.path.join(norm_dir, "anonymized")
+        
+        annotator_conf = config.get("annotation", {})
+        if annotator_conf.get("enabled", True):
+            annotator = ConversationAnnotator(
+                input_dir=anonymized_dir,
+                output_dir=datasets_dir,
+                api_key_env=annotator_conf.get("api_key_env", "GROQ_API_KEY"),
+                model=annotator_conf.get("model", "llama-3.1-8b-instant"),
+                intent_filename=annotator_conf.get("intent_filename", "intent_labels.jsonl"),
+                sentiment_filename=annotator_conf.get("sentiment_filename", "sentiment_labels.jsonl"),
+                summary_filename=annotator_conf.get("summary_filename", "summaries.jsonl")
+            )
+            counts = annotator.process_all()
+            logger.info(
+                f"Annotation completed: {counts['conversations_processed']} conversations annotated. "
+                f"Intents: {counts['intent_labels_written']}, Sentiments: {counts['sentiment_labels_written']}, "
+                f"Summaries: {counts['summaries_written']}. LLM Succeeded: {counts['llm_calls_succeeded']}, Fallbacks: {counts['fallbacks_executed']}."
+            )
+        else:
+            logger.info("Advanced annotation stage is disabled in configuration.")
+            
+    # 9. RAG Step
+    if run_all or step == "rag":
+        logger.info("Stage 9: Creating semantic dialogue segments and knowledge nuggets for RAG...")
+        anonymized_dir = os.path.join(norm_dir, "anonymized")
+        
+        rag_conf = config.get("rag", {})
+        if rag_conf.get("enabled", True):
+            generator = RAGGenerator(
+                input_dir=anonymized_dir,
+                output_dir=datasets_dir,
+                chunk_size_turns=rag_conf.get("chunk_size_turns", 4),
+                chunk_overlap_turns=rag_conf.get("chunk_overlap_turns", 2),
+                rag_filename=rag_conf.get("rag_filename", "rag_chunks.jsonl")
+            )
+            counts = generator.process_all()
+            logger.info(
+                f"RAG dataset generated: {counts['conversations_processed']} conversations processed. "
+                f"Chunks generated: {counts['total_chunks_written']} (Segments: {counts['segments_generated']}, Facts: {counts['facts_extracted']})."
+            )
+        else:
+            logger.info("RAG generation stage is disabled in configuration.")
+        
     logger.info("ETL Pipeline execution completed successfully.")
 
 def main():
@@ -262,7 +309,7 @@ def main():
     )
     run_parser.add_argument(
         "--step",
-        choices=["ingest", "normalize", "merge", "reconstruct", "clean", "anonymize", "export"],
+        choices=["ingest", "normalize", "merge", "reconstruct", "clean", "anonymize", "export", "annotate", "rag"],
         default=None,
         help="Run only a specific stage of the ETL pipeline"
     )
