@@ -1,0 +1,14 @@
+[25/06/2026, 09:00:10] +44 7911 123456: Hi, is this the shop helpline?
+[25/06/2026, 09:01:15] Agent Bob: Hello! Yes, this is Agent Bob. How can I help you today?
+[25/06/2026, 09:02:00] +44 7911 123456: I want to update my shipping address for my order #99887.
+[25/06/2026, 09:02:45] Agent Bob: Sure, I can help you with that. Can you provide the new address and your account password to verify?
+[25/06/2026, 09:03:30] +44 7911 123456: The new address is 789 Broadway Road, New York, NY.
+And the account pin is: 4321.
+[25/06/2026, 09:04:10] Agent Bob: Thank you. I have updated the shipping address to 789 Broadway Road, New York, NY.
+Best regards,
+Agent Bob
+[25/06/2026, 09:04:10] Agent Bob: Thank you. I have updated the shipping address to 789 Broadway Road, New York, NY.
+Best regards,
+Agent Bob
+[25/06/2026, 09:05:00] +44 7911 123456: thanks!
+[25/06/2026, 09:05:30] Agent Bob: 👍
