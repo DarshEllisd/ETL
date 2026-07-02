@@ -81,3 +81,7 @@ datasets/*
 *.sqlite
 data/
 output/
+# Local environment files
+.env
+.env.*
+.env.local
