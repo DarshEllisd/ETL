@@ -293,9 +293,27 @@ def run_pipeline(config: dict, step: str = None):
         else:
             logger.info("RAG generation stage is disabled in configuration.")
         
-    logger.info("ETL Pipeline execution completed successfully.")
+def load_dotenv(project_root: str):
+    """
+    Manually load environment variables from a .env file in project_root.
+    """
+    dotenv_path = os.path.join(project_root, ".env")
+    if os.path.exists(dotenv_path):
+        with open(dotenv_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, val = line.split('=', 1)
+                    key = key.strip()
+                    val = val.strip().strip("'").strip('"')
+                    os.environ[key] = val
 
 def main():
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    load_dotenv(project_root)
+    
     parser = argparse.ArgumentParser(description="Unified Conversation ETL Pipeline Runner CLI")
     
     subparsers = parser.add_subparsers(dest="command", required=True)
