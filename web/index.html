@@ -246,7 +246,12 @@
 
                 <!-- Pending Inbox Panel -->
                 <div class="preview-panel" id="auditor-pending-container" style="display: none; margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.2);">
-                    <h2>Pending Inbox (<span id="pending-count-lbl">0</span> items require review)</h2>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 8px;">
+                        <h2 style="margin: 0; border: none; padding: 0;">Pending Inbox (<span id="pending-count-lbl">0</span> items require review)</h2>
+                        <button class="btn-approve" id="approve-all-btn" style="padding: 6px 12px; font-size: 11px;">
+                            <i class="fa-solid fa-check-double"></i> Add All to Dataset
+                        </button>
+                    </div>
                     <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
                         Newly ingested conversations requiring permission to be compiled into the training set.
                     </p>

@@ -43,6 +43,8 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_api_exclude_conversation()
         elif parsed_url.path == "/api/approve-conversation":
             self.handle_api_approve_conversation()
+        elif parsed_url.path == "/api/approve-all-conversations":
+            self.handle_api_approve_all_conversations()
         elif parsed_url.path == "/api/save-roles":
             self.handle_api_save_roles()
         else:
@@ -405,6 +407,90 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response(200, {"status": "success"})
         except Exception as e:
             self.send_json_response(500, {"error": f"Failed to approve conversation: {str(e)}"})
+
+    def handle_api_approve_all_conversations(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            data = json.loads(post_data)
+            version = data.get("version")
+            
+            if not version:
+                self.send_json_response(400, {"error": "Missing parameter 'version'"})
+                return
+                
+            approved_path = os.path.join(project_root, "approved.json")
+            approved = []
+            if os.path.exists(approved_path):
+                try:
+                    with open(approved_path, 'r', encoding='utf-8') as f:
+                        approved = json.load(f)
+                except Exception:
+                    pass
+                    
+            # Scan for all conversations in anonymized folder
+            anonymized_dir = os.path.join(project_root, "normalized", "anonymized")
+            added_any = False
+            if os.path.exists(anonymized_dir):
+                for filename in os.listdir(anonymized_dir):
+                    if filename.endswith(".json"):
+                        path = os.path.join(anonymized_dir, filename)
+                        try:
+                            with open(path, 'r', encoding='utf-8') as f:
+                                conv_data = json.load(f)
+                                conv_id = conv_data.get("conversation_id")
+                                if conv_id and conv_id not in approved:
+                                    approved.append(conv_id)
+                                    added_any = True
+                        except Exception:
+                            pass
+            
+            if added_any:
+                with open(approved_path, 'w', encoding='utf-8') as f:
+                    json.dump(approved, f, indent=2)
+            
+            # Remove all from exclusions if present
+            exclusions_path = os.path.join(project_root, "exclusions.json")
+            if os.path.exists(exclusions_path):
+                try:
+                    with open(exclusions_path, 'r', encoding='utf-8') as f:
+                        exclusions = json.load(f)
+                    new_exclusions = [x for x in exclusions if x not in approved]
+                    if len(new_exclusions) < len(exclusions):
+                        with open(exclusions_path, 'w', encoding='utf-8') as f:
+                            json.dump(new_exclusions, f, indent=2)
+                except Exception:
+                    pass
+            
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if not os.path.exists(config_path):
+                self.send_json_response(400, {"error": "Config file configs/config.yaml not found"})
+                return
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            version_str = version[1:] if version.startswith("v") else version
+            if "dataset" not in config:
+                config["dataset"] = {}
+            config["dataset"]["version"] = version_str
+            
+            setup_logging(config.get("logging", {}), verbose=False)
+            run_pipeline(config, "export")
+            
+            annotator_conf = config.get("annotation", {})
+            if annotator_conf.get("enabled", True):
+                run_pipeline(config, "annotate")
+                
+            rag_conf = config.get("rag", {})
+            if rag_conf.get("enabled", True):
+                run_pipeline(config, "rag")
+            
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to approve all: {str(e)}"})
 
     def handle_api_save_roles(self):
         project_root = os.path.dirname(os.path.abspath(__file__))

@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const auditorPendingContainer = document.getElementById("auditor-pending-container");
     const pendingCountLbl = document.getElementById("pending-count-lbl");
     const pendingMessagesList = document.getElementById("pending-messages-list");
+    const approveAllBtn = document.getElementById("approve-all-btn");
     const auditorRolesContainer = document.getElementById("auditor-roles-container");
     const rolesListContainer = document.getElementById("roles-list-container");
     const saveRolesBtn = document.getElementById("save-roles-btn");
@@ -607,6 +608,42 @@ document.addEventListener("DOMContentLoaded", () => {
         tr.appendChild(tdDelta);
         tableBody.appendChild(tr);
     }
+
+    // Approve all pending handler
+    approveAllBtn.addEventListener("click", async () => {
+        const version = audVersionSelect.value;
+        if (!version) {
+            alert("Please select a version first.");
+            return;
+        }
+        if (!confirm("Are you sure you want to approve all pending conversations and add them to the dataset?")) {
+            return;
+        }
+        
+        approveAllBtn.disabled = true;
+        const origHtml = approveAllBtn.innerHTML;
+        approveAllBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+        
+        try {
+            const res = await fetch("/api/approve-all-conversations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ version })
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert(`Error: ${data.error}`);
+            } else {
+                loadDatasetDetails(version);
+                loadStatus();
+            }
+        } catch (err) {
+            alert(`Failed to approve all: ${err}`);
+        } finally {
+            approveAllBtn.disabled = false;
+            approveAllBtn.innerHTML = origHtml;
+        }
+    });
 
     // Trigger initial loading
     loadStatus();
