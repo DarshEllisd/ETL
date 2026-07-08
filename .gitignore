@@ -85,3 +85,4 @@ output/
 .env
 .env.*
 .env.local
+tests/mock_data
