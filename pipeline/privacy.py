@@ -1,11 +1,17 @@
 import os
 import json
 import re
+import time
+import logging
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Tuple
 
+logger = logging.getLogger("etl_pipeline.privacy")
+
 class PrivacyScrubber:
-    def __init__(self, input_dir: str, output_dir: str, report_path: str):
+    def __init__(self, input_dir: str, output_dir: str, report_path: str, api_key_env: str = "GROQ_API_KEY_SCRUBBING", model: str = "llama-3.1-8b-instant"):
         """
         Initialize PrivacyScrubber.
         :param input_dir: Directory containing cleaned conversation records.
@@ -15,6 +21,8 @@ class PrivacyScrubber:
         self.input_dir = os.path.abspath(input_dir)
         self.output_dir = os.path.abspath(output_dir)
         self.report_path = os.path.abspath(report_path)
+        self.api_key_env = api_key_env
+        self.model = model
         os.makedirs(self.output_dir, exist_ok=True)
         
         # Regex compiled patterns
@@ -102,6 +110,118 @@ class PrivacyScrubber:
             "names": name_count
         }
 
+    def get_api_key(self) -> str:
+        if os.environ.get("ETL_TESTING") == "true":
+            return ""
+        api_key = os.environ.get(self.api_key_env, "").strip()
+        if not api_key:
+            # Try to read .env from project root (one level up from pipeline/)
+            env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+            if os.path.exists(env_path):
+                content = ""
+                try:
+                    with open(env_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                except UnicodeDecodeError:
+                    try:
+                        with open(env_path, 'r', encoding='utf-16') as f:
+                            content = f.read()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                
+                if content:
+                    for line in content.splitlines():
+                        if line.strip() and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            if k.strip() == self.api_key_env:
+                                api_key = v.strip().strip('"').strip("'")
+                                break
+        return api_key
+
+    def llm_scrub_conversation(self, conv_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sends the conversation turns to the Groq API to scrub NSFW and private messages.
+        Outputs a JSON list of mapping message IDs to clean/redacted texts.
+        """
+        api_key = self.get_api_key()
+        if not api_key:
+            return {}
+
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        
+        system_instruction = (
+            "You are a content filtering and privacy protection assistant. "
+            "Analyze the following conversation messages. For each message:\n"
+            "1. Detect NSFW/offensive/inappropriate/profane content. Replace NSFW words or phrases with '[NSFW]'. Set 'is_nsfw' to true.\n"
+            "2. Detect private/confidential/sensitive details (such as internal office warnings, HR warning notices, corporate secrets, confidential keys, personal life details). Replace those sentences or details with '[PRIVATE]'. Set 'is_private' to true.\n"
+            "3. Keep normal, clean customer/support chat text exactly unchanged.\n"
+            "Return a JSON object matching this schema:\n"
+            "{\n"
+            '  "messages": [\n'
+            '    {"message_id": "string", "is_nsfw": boolean, "is_private": boolean, "scrubbed_text": "string"}\n'
+            "  ]\n"
+            "}"
+        )
+        
+        # Format the messages in the prompt
+        formatted_messages = []
+        for msg in conv_data.get("messages", []):
+            formatted_messages.append({
+                "message_id": msg.get("message_id", ""),
+                "speaker": msg.get("speaker", ""),
+                "text": msg.get("text", "")
+            })
+            
+        prompt = json.dumps({"messages_to_classify": formatted_messages}, indent=2)
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0
+        }
+        
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=req_data,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0"
+            },
+            method="POST"
+        )
+        
+        max_retries = 3
+        backoff = 3.0
+        for attempt in range(max_retries):
+            try:
+                # Add delay between calls to stay below 30 RPM
+                time.sleep(2.2)
+                with urllib.request.urlopen(req, timeout=30) as res:
+                    res_body = res.read().decode("utf-8")
+                    res_json = json.loads(res_body)
+                    content_str = res_json["choices"][0]["message"]["content"]
+                    return json.loads(content_str)
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < max_retries - 1:
+                    logger.warning(f"Groq API 429 Rate Limit hit. Retrying in {backoff}s...")
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                logger.warning(f"Groq LLM Privacy scrubbing failed for conversation '{conv_data.get('conversation_id')}': {e}. Falling back to pattern-only scrubbing.")
+                return {}
+            except Exception as e:
+                logger.warning(f"Groq LLM Privacy scrubbing failed for conversation '{conv_data.get('conversation_id')}': {e}. Falling back to pattern-only scrubbing.")
+                return {}
+        return {}
+
     def extract_participants(self, conv_data: Dict[str, Any]) -> List[str]:
         """
         Helper to gather participant names from email headers, WhatsApp senders,
@@ -155,14 +275,17 @@ class PrivacyScrubber:
             "phones": 0,
             "passwords": 0,
             "addresses": 0,
-            "names": 0
+            "names": 0,
+            "nsfw": 0,
+            "private": 0
         }
         
+        # 1. Deterministic pattern-based scrubbing
         for msg in conv_data.get("messages", []):
             text = msg.get("text", "")
             res = self.scrub_text(text, participant_names)
             
-            for key in counts:
+            for key in ["emails", "phones", "passwords", "addresses", "names"]:
                 counts[key] += res[key]
                 
             msg_copy = msg.copy()
@@ -171,6 +294,23 @@ class PrivacyScrubber:
             
         anonymized_conv = conv_data.copy()
         anonymized_conv["messages"] = anonymized_messages
+
+        # 2. LLM-based NSFW/private content scrubbing
+        api_key = self.get_api_key()
+        if api_key:
+            llm_res = self.llm_scrub_conversation(anonymized_conv)
+            if llm_res and "messages" in llm_res:
+                scrub_map = {m["message_id"]: m for m in llm_res["messages"] if "message_id" in m}
+                for msg in anonymized_conv["messages"]:
+                    m_id = msg.get("message_id")
+                    if m_id in scrub_map:
+                        decision = scrub_map[m_id]
+                        if decision.get("is_nsfw"):
+                            counts["nsfw"] += 1
+                        if decision.get("is_private"):
+                            counts["private"] += 1
+                        if decision.get("scrubbed_text"):
+                            msg["text"] = decision["scrubbed_text"]
         
         # Save scrub counts in metadata
         anonymized_conv["metadata"] = conv_data.get("metadata", {}).copy()
@@ -180,6 +320,8 @@ class PrivacyScrubber:
         anonymized_conv["metadata"]["pii_passwords_scrubbed"] = counts["passwords"]
         anonymized_conv["metadata"]["pii_addresses_scrubbed"] = counts["addresses"]
         anonymized_conv["metadata"]["pii_names_scrubbed"] = counts["names"]
+        anonymized_conv["metadata"]["nsfw_messages_scrubbed"] = counts["nsfw"]
+        anonymized_conv["metadata"]["private_messages_scrubbed"] = counts["private"]
         
         return anonymized_conv, counts
 
@@ -208,7 +350,9 @@ class PrivacyScrubber:
                 "total_phones_scrubbed": 0,
                 "total_passwords_scrubbed": 0,
                 "total_addresses_scrubbed": 0,
-                "total_names_scrubbed": 0
+                "total_names_scrubbed": 0,
+                "total_nsfw_messages_scrubbed": 0,
+                "total_private_messages_scrubbed": 0
             },
             "scrubbed_details": []
         }
@@ -222,7 +366,9 @@ class PrivacyScrubber:
             "phones": 0,
             "passwords": 0,
             "addresses": 0,
-            "names": 0
+            "names": 0,
+            "nsfw": 0,
+            "private": 0
         }
         
         for filename in os.listdir(self.input_dir):
@@ -240,7 +386,9 @@ class PrivacyScrubber:
                         "phones_scrubbed": counts["phones"],
                         "passwords_scrubbed": counts["passwords"],
                         "addresses_scrubbed": counts["addresses"],
-                        "names_scrubbed": counts["names"]
+                        "names_scrubbed": counts["names"],
+                        "nsfw_scrubbed": counts["nsfw"],
+                        "private_scrubbed": counts["private"]
                     })
                     
                 for key in totals:
@@ -252,6 +400,8 @@ class PrivacyScrubber:
         report_data["stats"]["total_passwords_scrubbed"] = totals["passwords"]
         report_data["stats"]["total_addresses_scrubbed"] = totals["addresses"]
         report_data["stats"]["total_names_scrubbed"] = totals["names"]
+        report_data["stats"]["total_nsfw_messages_scrubbed"] = totals["nsfw"]
+        report_data["stats"]["total_private_messages_scrubbed"] = totals["private"]
         
         # Write report
         report_dir = os.path.dirname(self.report_path)

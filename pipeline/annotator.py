@@ -159,15 +159,29 @@ class ConversationAnnotator:
             method="POST"
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                res_body = response.read().decode("utf-8")
-                res_json = json.loads(res_body)
-                content = res_json["choices"][0]["message"]["content"]
-                return json.loads(content)
-        except Exception as e:
-            logger.warning(f"Groq API call failed: {e}. Falling back to rule-based annotator.")
-            raise e
+        max_retries = 3
+        backoff = 3.0
+        for attempt in range(max_retries):
+            try:
+                # Add delay between calls to stay below 30 RPM
+                time.sleep(2.2)
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    res_body = response.read().decode("utf-8")
+                    res_json = json.loads(res_body)
+                    content = res_json["choices"][0]["message"]["content"]
+                    return json.loads(content)
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < max_retries - 1:
+                    logger.warning(f"Groq API 429 Rate Limit hit. Retrying in {backoff}s...")
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                logger.warning(f"Groq API call failed: {e}. Falling back to rule-based annotator.")
+                raise e
+            except Exception as e:
+                logger.warning(f"Groq API call failed: {e}. Falling back to rule-based annotator.")
+                raise e
+        raise ValueError("Failed to get response after retries")
 
     def format_conversation_text(self, conv: Dict[str, Any]) -> str:
         lines = []
@@ -301,7 +315,6 @@ class ConversationAnnotator:
                 annotations = None
                 if api_key:
                     try:
-                        time.sleep(1.5)  # Delay between API calls to avoid Groq Rate Limit (429)
                         annotations = self.call_groq_api(conv_text)
                         counts["llm_calls_succeeded"] += 1
                         logger.info(f"Successfully annotated conversation '{conv_id}' using Groq LLM.")

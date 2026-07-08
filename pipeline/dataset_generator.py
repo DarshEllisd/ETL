@@ -126,7 +126,9 @@ class DatasetGenerator:
             "phones_scrubbed": 0,
             "passwords_scrubbed": 0,
             "addresses_scrubbed": 0,
-            "names_scrubbed": 0
+            "names_scrubbed": 0,
+            "nsfw_messages_scrubbed": 0,
+            "private_messages_scrubbed": 0
         }
         
         for conv in conversations:
@@ -141,6 +143,8 @@ class DatasetGenerator:
             pii_totals["passwords_scrubbed"] += meta.get("pii_passwords_scrubbed", 0)
             pii_totals["addresses_scrubbed"] += meta.get("pii_addresses_scrubbed", 0)
             pii_totals["names_scrubbed"] += meta.get("pii_names_scrubbed", 0)
+            pii_totals["nsfw_messages_scrubbed"] += meta.get("nsfw_messages_scrubbed", 0)
+            pii_totals["private_messages_scrubbed"] += meta.get("private_messages_scrubbed", 0)
             
         metadata = {
             "version": self.version,
