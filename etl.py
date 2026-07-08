@@ -237,7 +237,9 @@ def run_pipeline(config: dict, step: str = None):
         scrubber = PrivacyScrubber(
             input_dir=cleaned_dir,
             output_dir=anonymized_dir,
-            report_path=report_path
+            report_path=report_path,
+            api_key_env=privacy_conf.get("api_key_env", "GROQ_API_KEY_SCRUBBING"),
+            model=privacy_conf.get("model", "llama-3.1-8b-instant")
         )
         report = scrubber.process_all()
         logger.info(f"Privacy scrubbing completed. Anonymized files: {report['stats']['total_files_anonymized']}.")

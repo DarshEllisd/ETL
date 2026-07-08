@@ -23,6 +23,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const piiPhonesLbl = document.getElementById("pii-phones-lbl");
     const piiPasswordsLbl = document.getElementById("pii-passwords-lbl");
     const piiAddressesLbl = document.getElementById("pii-addresses-lbl");
+    const piiNsfwLbl = document.getElementById("pii-nsfw-lbl");
+    const piiPrivateLbl = document.getElementById("pii-private-lbl");
     const chartGmailBar = document.getElementById("chart-gmail-bar");
     const chartWhatsappBar = document.getElementById("chart-whatsapp-bar");
     const lblGmailCount = document.getElementById("lbl-gmail-count");
@@ -276,6 +278,8 @@ document.addEventListener("DOMContentLoaded", () => {
             piiPhonesLbl.innerText = pii.phones_scrubbed || 0;
             piiPasswordsLbl.innerText = pii.passwords_scrubbed || 0;
             piiAddressesLbl.innerText = pii.addresses_scrubbed || 0;
+            piiNsfwLbl.innerText = pii.nsfw_messages_scrubbed || 0;
+            piiPrivateLbl.innerText = pii.private_messages_scrubbed || 0;
 
             // Chart bar distribution math
             const gmail = data.metadata.source_distribution?.gmail || 0;
