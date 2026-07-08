@@ -43,6 +43,15 @@ class ConversationAnnotator:
         if not os.path.exists(self.input_dir):
             return conversations
             
+        approved = []
+        approved_path = "approved.json"
+        if os.path.exists(approved_path):
+            try:
+                with open(approved_path, 'r', encoding='utf-8') as f:
+                    approved = json.load(f)
+            except Exception:
+                pass
+
         exclusions = []
         if os.path.exists("exclusions.json"):
             try:
@@ -58,8 +67,11 @@ class ConversationAnnotator:
                     with open(path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                         conv_id = data.get("conversation_id")
-                        if conv_id and conv_id in exclusions:
-                            continue
+                        if conv_id:
+                            if conv_id in exclusions:
+                                continue
+                            if os.path.exists(approved_path) and conv_id not in approved:
+                                continue
                         conversations.append(data)
                 except Exception as e:
                     logger.error(f"Failed to load conversation file {filename}: {e}")
