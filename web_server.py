@@ -522,19 +522,55 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 config["dataset"] = {}
             config["dataset"]["version"] = version_str
             
-            # Re-run all pipeline steps to reclassify users/assistants and regenerate metrics
+            # Optimize role updates by modifying speaker keys directly across all intermediate stages,
+            # completely bypassing Groq LLM API calls (Stages 6 and 8).
             setup_logging(config.get("logging", {}), verbose=False)
             run_pipeline(config, "normalize")
-            run_pipeline(config, "merge")
-            run_pipeline(config, "reconstruct")
-            run_pipeline(config, "clean")
-            run_pipeline(config, "anonymize")
+            
+            # Build message_id to speaker mapping
+            msg_to_speaker = {}
+            for folder in ["gmail", "whatsapp"]:
+                folder_path = os.path.join(project_root, "normalized", folder)
+                if os.path.exists(folder_path):
+                    for filename in os.listdir(folder_path):
+                        if filename.endswith(".json"):
+                            p = os.path.join(folder_path, filename)
+                            try:
+                                with open(p, 'r', encoding='utf-8') as f:
+                                    mdata = json.load(f)
+                                    mid = mdata.get("message_id")
+                                    spk = mdata.get("speaker")
+                                    if mid and spk:
+                                        msg_to_speaker[mid] = spk
+                            except Exception:
+                                pass
+                                
+            # Update speaker field in all intermediate folders directly
+            for folder in ["unified", "reconstructed", "cleaned", "anonymized"]:
+                folder_path = os.path.join(project_root, "normalized", folder)
+                if os.path.exists(folder_path):
+                    for filename in os.listdir(folder_path):
+                        if filename.endswith(".json"):
+                            p = os.path.join(folder_path, filename)
+                            try:
+                                with open(p, 'r', encoding='utf-8') as f:
+                                    cdata = json.load(f)
+                                updated = False
+                                for msg in cdata.get("messages", []):
+                                    mid = msg.get("message_id")
+                                    if mid in msg_to_speaker:
+                                        msg["speaker"] = msg_to_speaker[mid]
+                                        updated = True
+                                if updated:
+                                    with open(p, 'w', encoding='utf-8') as f:
+                                        json.dump(cdata, f, indent=2, ensure_ascii=False)
+                            except Exception:
+                                pass
+                                
+            # Rebuild dataset exports and statistics
             run_pipeline(config, "export")
             
-            annotator_conf = config.get("annotation", {})
-            if annotator_conf.get("enabled", True):
-                run_pipeline(config, "annotate")
-                
+            # Rebuild RAG chunks
             rag_conf = config.get("rag", {})
             if rag_conf.get("enabled", True):
                 run_pipeline(config, "rag")
