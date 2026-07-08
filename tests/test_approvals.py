@@ -34,26 +34,18 @@ class TestConversationApprovals(unittest.TestCase):
         with open(os.path.join(self.input_dir, "conv2.json"), 'w', encoding='utf-8') as f:
             json.dump(self.conv2, f)
             
-        self.root_approved_path = "approved.json"
-        self.approved_backup = None
-        if os.path.exists(self.root_approved_path):
-            with open(self.root_approved_path, 'r', encoding='utf-8') as f:
-                self.approved_backup = f.read()
+        self.root_approved_path = os.path.join(self.test_dir, "mock_approved.json")
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
-        
-        if self.approved_backup is not None:
-            with open(self.root_approved_path, 'w', encoding='utf-8') as f:
-                f.write(self.approved_backup)
-        elif os.path.exists(self.root_approved_path):
-            os.remove(self.root_approved_path)
 
     def test_approvals_filter_applied_correctly(self):
-        generator = DatasetGenerator(self.input_dir, self.output_dir, "1.0.0")
+        # 1. When approved_path does not exist, all loaded
+        generator = DatasetGenerator(self.input_dir, self.output_dir, "1.0.0", approved_path=self.root_approved_path)
         convs = generator.load_conversations()
         self.assertEqual(len(convs), 2)
         
+        # 2. When approved_path is populated, filter is enforced
         with open(self.root_approved_path, 'w', encoding='utf-8') as f:
             json.dump(["conv_approved_123"], f)
             

@@ -30,6 +30,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const auditorPendingContainer = document.getElementById("auditor-pending-container");
     const pendingCountLbl = document.getElementById("pending-count-lbl");
     const pendingMessagesList = document.getElementById("pending-messages-list");
+    const approveAllBtn = document.getElementById("approve-all-btn");
+    const auditorRolesContainer = document.getElementById("auditor-roles-container");
+    const rolesListContainer = document.getElementById("roles-list-container");
+    const saveRolesBtn = document.getElementById("save-roles-btn");
 
     // Diff elements
     const diffV1Select = document.getElementById("diff-v1-select");
@@ -255,6 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
             auditorVizContainer.style.display = "grid";
             auditorPreviewContainer.style.display = "block";
             auditorPendingContainer.style.display = "block";
+            auditorRolesContainer.style.display = "block";
             pendingCountLbl.innerText = data.pending ? data.pending.length : 0;
 
             // Card details
@@ -375,6 +380,92 @@ document.addEventListener("DOMContentLoaded", () => {
                     pendingMessagesList.appendChild(convCard);
                 });
             }
+
+            // Roles list builder
+            rolesListContainer.innerHTML = "";
+            if (!data.participants || data.participants.length === 0) {
+                rolesListContainer.innerHTML = '<p class="text-secondary" style="font-size: 13px;">No participants found in dataset.</p>';
+            } else {
+                data.participants.forEach(p => {
+                    const row = document.createElement("div");
+                    row.style.display = "flex";
+                    row.style.justifyContent = "space-between";
+                    row.style.alignItems = "center";
+                    row.style.padding = "6px 12px";
+                    row.style.background = "rgba(255, 255, 255, 0.02)";
+                    row.style.borderRadius = "4px";
+                    row.style.border = "1px solid rgba(255, 255, 255, 0.05)";
+                    
+                    const nameSpan = document.createElement("span");
+                    nameSpan.style.fontSize = "13px";
+                    nameSpan.style.fontWeight = "500";
+                    nameSpan.innerText = p;
+                    
+                    const select = document.createElement("select");
+                    select.className = "styled-select";
+                    select.style.padding = "2px 8px";
+                    select.style.fontSize = "12px";
+                    select.style.width = "auto";
+                    select.style.margin = "0";
+                    select.dataset.name = p;
+                    
+                    const optUser = document.createElement("option");
+                    optUser.value = "user";
+                    optUser.innerText = "Customer (User)";
+                    
+                    const optAgent = document.createElement("option");
+                    optAgent.value = "assistant";
+                    optAgent.innerText = "Agent (Assistant)";
+                    
+                    const isAgent = data.agents.some(a => a.toLowerCase().trim() === p.toLowerCase().trim());
+                    if (isAgent) {
+                        optAgent.selected = true;
+                    } else {
+                        optUser.selected = true;
+                    }
+                    
+                    select.appendChild(optUser);
+                    select.appendChild(optAgent);
+                    
+                    row.appendChild(nameSpan);
+                    row.appendChild(select);
+                    rolesListContainer.appendChild(row);
+                });
+            }
+
+            saveRolesBtn.onclick = async () => {
+                const selectedAgents = [];
+                rolesListContainer.querySelectorAll("select").forEach(sel => {
+                    if (sel.value === "assistant") {
+                        selectedAgents.push(sel.dataset.name);
+                    }
+                });
+                
+                saveRolesBtn.disabled = true;
+                const origHtml = saveRolesBtn.innerHTML;
+                saveRolesBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+                
+                try {
+                    const res = await fetch("/api/save-roles", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ version, agents: selectedAgents })
+                    });
+                    const resData = await res.json();
+                    if (resData.error) {
+                        alert(`Error saving roles: ${resData.error}`);
+                    } else {
+                        alert("Roles saved successfully! Dataset re-processed.");
+                        loadDatasetDetails(version);
+                        loadStatus();
+                    }
+                } catch (err) {
+                    alert(`Network error saving roles: ${err}`);
+                } finally {
+                    saveRolesBtn.disabled = false;
+                    saveRolesBtn.innerHTML = origHtml;
+                }
+            };
 
         } catch (err) {
             console.error("Failed to load dataset details:", err);
@@ -517,6 +608,42 @@ document.addEventListener("DOMContentLoaded", () => {
         tr.appendChild(tdDelta);
         tableBody.appendChild(tr);
     }
+
+    // Approve all pending handler
+    approveAllBtn.addEventListener("click", async () => {
+        const version = audVersionSelect.value;
+        if (!version) {
+            alert("Please select a version first.");
+            return;
+        }
+        if (!confirm("Are you sure you want to approve all pending conversations and add them to the dataset?")) {
+            return;
+        }
+        
+        approveAllBtn.disabled = true;
+        const origHtml = approveAllBtn.innerHTML;
+        approveAllBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+        
+        try {
+            const res = await fetch("/api/approve-all-conversations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ version })
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert(`Error: ${data.error}`);
+            } else {
+                loadDatasetDetails(version);
+                loadStatus();
+            }
+        } catch (err) {
+            alert(`Failed to approve all: ${err}`);
+        } finally {
+            approveAllBtn.disabled = false;
+            approveAllBtn.innerHTML = origHtml;
+        }
+    });
 
     // Trigger initial loading
     loadStatus();

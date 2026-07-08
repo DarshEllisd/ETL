@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import logging
 import urllib.request
 import urllib.error
@@ -17,7 +18,8 @@ class ConversationAnnotator:
         model: str = "llama-3.1-8b-instant",
         intent_filename: str = "intent_labels.jsonl",
         sentiment_filename: str = "sentiment_labels.jsonl",
-        summary_filename: str = "summaries.jsonl"
+        summary_filename: str = "summaries.jsonl",
+        approved_path: str = None
     ):
         """
         Initialize ConversationAnnotator.
@@ -28,6 +30,7 @@ class ConversationAnnotator:
         :param intent_filename: Target filename for intent labels JSONL.
         :param sentiment_filename: Target filename for sentiment labels JSONL.
         :param summary_filename: Target filename for summaries JSONL.
+        :param approved_path: Optional path to approved.json whitelist file.
         """
         self.input_dir = os.path.abspath(input_dir)
         self.output_dir = os.path.abspath(output_dir)
@@ -36,6 +39,7 @@ class ConversationAnnotator:
         self.intent_filename = intent_filename
         self.sentiment_filename = sentiment_filename
         self.summary_filename = summary_filename
+        self.approved_path = approved_path
         os.makedirs(self.output_dir, exist_ok=True)
 
     def load_conversations(self) -> List[Dict[str, Any]]:
@@ -44,10 +48,9 @@ class ConversationAnnotator:
             return conversations
             
         approved = []
-        approved_path = "approved.json"
-        if os.path.exists(approved_path):
+        if self.approved_path and os.path.exists(self.approved_path):
             try:
-                with open(approved_path, 'r', encoding='utf-8') as f:
+                with open(self.approved_path, 'r', encoding='utf-8') as f:
                     approved = json.load(f)
             except Exception:
                 pass
@@ -70,7 +73,7 @@ class ConversationAnnotator:
                         if conv_id:
                             if conv_id in exclusions:
                                 continue
-                            if os.path.exists(approved_path) and conv_id not in approved:
+                            if self.approved_path and os.path.exists(self.approved_path) and conv_id not in approved:
                                 continue
                         conversations.append(data)
                 except Exception as e:
@@ -83,7 +86,32 @@ class ConversationAnnotator:
         """
         api_key = os.environ.get(self.api_key_env, "").strip()
         if not api_key:
-            raise ValueError("Groq API key not found in environment.")
+            # Try to read .env from project root (one level up from pipeline/)
+            env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+            if os.path.exists(env_path):
+                content = ""
+                try:
+                    with open(env_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                except UnicodeDecodeError:
+                    try:
+                        with open(env_path, 'r', encoding='utf-16') as f:
+                            content = f.read()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                
+                if content:
+                    for line in content.splitlines():
+                        if line.strip() and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            if k.strip() == self.api_key_env:
+                                api_key = v.strip().strip('"').strip("'")
+                                break
+                    
+        if not api_key:
+            raise ValueError("Groq API key not found in environment or .env file.")
 
         url = "https://api.groq.com/openai/v1/chat/completions"
         
@@ -268,6 +296,7 @@ class ConversationAnnotator:
                 annotations = None
                 if api_key:
                     try:
+                        time.sleep(1.5)  # Delay between API calls to avoid Groq Rate Limit (429)
                         annotations = self.call_groq_api(conv_text)
                         counts["llm_calls_succeeded"] += 1
                         logger.info(f"Successfully annotated conversation '{conv_id}' using Groq LLM.")

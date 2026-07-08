@@ -43,6 +43,10 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_api_exclude_conversation()
         elif parsed_url.path == "/api/approve-conversation":
             self.handle_api_approve_conversation()
+        elif parsed_url.path == "/api/approve-all-conversations":
+            self.handle_api_approve_all_conversations()
+        elif parsed_url.path == "/api/save-roles":
+            self.handle_api_save_roles()
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -119,12 +123,12 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
         meta = load_json("metadata.json")
         stats = load_json("statistics.json")
         
-        # Load preview of conversations.jsonl (first 5 rows)
+        # Load preview of conversations.jsonl (first 50 rows)
         preview_rows = []
         jsonl_path = os.path.join(version_dir, "conversations.jsonl")
         if os.path.exists(jsonl_path):
             with open(jsonl_path, 'r', encoding='utf-8') as f:
-                for _ in range(5):
+                for _ in range(50):
                     line = f.readline()
                     if not line:
                         break
@@ -170,11 +174,60 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
+        # Load unique participants from normalized messages in gmail and whatsapp folders
+        participants = []
+        unique_set = set()
+        for folder in ["gmail", "whatsapp"]:
+            folder_dir = os.path.join(project_root, "normalized", folder)
+            if os.path.exists(folder_dir):
+                for filename in os.listdir(folder_dir):
+                    if filename.endswith(".json"):
+                        path = os.path.join(folder_dir, filename)
+                        try:
+                            with open(path, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                                name = data.get("metadata", {}).get("raw_speaker_name")
+                                if name:
+                                    if "@" in name and ("<" in name or ">" in name):
+                                        import email.utils
+                                        parsed_name, parsed_email = email.utils.parseaddr(name)
+                                        if parsed_name:
+                                            unique_set.add(parsed_name)
+                                        if parsed_email:
+                                            unique_set.add(parsed_email)
+                                    else:
+                                        unique_set.add(name)
+                        except Exception:
+                            pass
+        participants = sorted(list(unique_set))
+            
+        # Load currently assigned agents
+        agents = []
+        agents_path = os.path.join(project_root, "agents.json")
+        if os.path.exists(agents_path):
+            try:
+                with open(agents_path, 'r', encoding='utf-8') as f:
+                    agents = json.load(f)
+            except Exception:
+                pass
+        else:
+            # Fallback to defaults from config.yaml
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = yaml.safe_load(f)
+                        agents = config.get("connectors", {}).get("whatsapp", {}).get("agent_names", [])
+                except Exception:
+                    pass
+
         self.send_json_response(200, {
             "metadata": meta,
             "statistics": stats,
             "preview": preview_rows,
-            "pending": pending_rows
+            "pending": pending_rows,
+            "participants": participants,
+            "agents": agents
         })
 
     def handle_api_run(self):
@@ -274,7 +327,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             setup_logging(config.get("logging", {}), verbose=False)
             run_pipeline(config, "export")
             
-            annotator_conf = config.get("annotator", {})
+            annotator_conf = config.get("annotation", {})
             if annotator_conf.get("enabled", True):
                 run_pipeline(config, "annotate")
                 
@@ -343,7 +396,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             setup_logging(config.get("logging", {}), verbose=False)
             run_pipeline(config, "export")
             
-            annotator_conf = config.get("annotator", {})
+            annotator_conf = config.get("annotation", {})
             if annotator_conf.get("enabled", True):
                 run_pipeline(config, "annotate")
                 
@@ -354,6 +407,138 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response(200, {"status": "success"})
         except Exception as e:
             self.send_json_response(500, {"error": f"Failed to approve conversation: {str(e)}"})
+
+    def handle_api_approve_all_conversations(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            data = json.loads(post_data)
+            version = data.get("version")
+            
+            if not version:
+                self.send_json_response(400, {"error": "Missing parameter 'version'"})
+                return
+                
+            approved_path = os.path.join(project_root, "approved.json")
+            approved = []
+            if os.path.exists(approved_path):
+                try:
+                    with open(approved_path, 'r', encoding='utf-8') as f:
+                        approved = json.load(f)
+                except Exception:
+                    pass
+                    
+            # Scan for all conversations in anonymized folder
+            anonymized_dir = os.path.join(project_root, "normalized", "anonymized")
+            added_any = False
+            if os.path.exists(anonymized_dir):
+                for filename in os.listdir(anonymized_dir):
+                    if filename.endswith(".json"):
+                        path = os.path.join(anonymized_dir, filename)
+                        try:
+                            with open(path, 'r', encoding='utf-8') as f:
+                                conv_data = json.load(f)
+                                conv_id = conv_data.get("conversation_id")
+                                if conv_id and conv_id not in approved:
+                                    approved.append(conv_id)
+                                    added_any = True
+                        except Exception:
+                            pass
+            
+            if added_any:
+                with open(approved_path, 'w', encoding='utf-8') as f:
+                    json.dump(approved, f, indent=2)
+            
+            # Remove all from exclusions if present
+            exclusions_path = os.path.join(project_root, "exclusions.json")
+            if os.path.exists(exclusions_path):
+                try:
+                    with open(exclusions_path, 'r', encoding='utf-8') as f:
+                        exclusions = json.load(f)
+                    new_exclusions = [x for x in exclusions if x not in approved]
+                    if len(new_exclusions) < len(exclusions):
+                        with open(exclusions_path, 'w', encoding='utf-8') as f:
+                            json.dump(new_exclusions, f, indent=2)
+                except Exception:
+                    pass
+            
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if not os.path.exists(config_path):
+                self.send_json_response(400, {"error": "Config file configs/config.yaml not found"})
+                return
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            version_str = version[1:] if version.startswith("v") else version
+            if "dataset" not in config:
+                config["dataset"] = {}
+            config["dataset"]["version"] = version_str
+            
+            setup_logging(config.get("logging", {}), verbose=False)
+            run_pipeline(config, "export")
+            
+            annotator_conf = config.get("annotation", {})
+            if annotator_conf.get("enabled", True):
+                run_pipeline(config, "annotate")
+                
+            rag_conf = config.get("rag", {})
+            if rag_conf.get("enabled", True):
+                run_pipeline(config, "rag")
+            
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to approve all: {str(e)}"})
+
+    def handle_api_save_roles(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            data = json.loads(post_data)
+            version = data.get("version", "v1.0.0")
+            agents = data.get("agents", [])
+            
+            agents_path = os.path.join(project_root, "agents.json")
+            with open(agents_path, 'w', encoding='utf-8') as f:
+                json.dump(agents, f, indent=2)
+                
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if not os.path.exists(config_path):
+                self.send_json_response(400, {"error": "Config file configs/config.yaml not found"})
+                return
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            version_str = version[1:] if version.startswith("v") else version
+            if "dataset" not in config:
+                config["dataset"] = {}
+            config["dataset"]["version"] = version_str
+            
+            # Re-run all pipeline steps to reclassify users/assistants and regenerate metrics
+            setup_logging(config.get("logging", {}), verbose=False)
+            run_pipeline(config, "normalize")
+            run_pipeline(config, "merge")
+            run_pipeline(config, "reconstruct")
+            run_pipeline(config, "clean")
+            run_pipeline(config, "anonymize")
+            run_pipeline(config, "export")
+            
+            annotator_conf = config.get("annotation", {})
+            if annotator_conf.get("enabled", True):
+                run_pipeline(config, "annotate")
+                
+            rag_conf = config.get("rag", {})
+            if rag_conf.get("enabled", True):
+                run_pipeline(config, "rag")
+                
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to save roles: {str(e)}"})
 
     def send_json_response(self, status, data):
         self.send_response(status)

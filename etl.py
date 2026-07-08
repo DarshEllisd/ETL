@@ -128,6 +128,15 @@ def run_pipeline(config: dict, step: str = None):
     if run_all or step == "normalize":
         logger.info("Stage 2: Normalizing raw data...")
         
+        agent_names = config.get("connectors", {}).get("whatsapp", {}).get("agent_names", [])
+        agents_json_path = os.path.join(project_root, "agents.json")
+        if os.path.exists(agents_json_path):
+            try:
+                with open(agents_json_path, 'r', encoding='utf-8') as f:
+                    agent_names = json.load(f)
+            except Exception:
+                pass
+        
         # Gmail normalizer
         gmail_conf = config.get("connectors", {}).get("gmail", {})
         if gmail_conf.get("enabled", True):
@@ -136,7 +145,8 @@ def run_pipeline(config: dict, step: str = None):
             normalizer = GmailNormalizer(
                 raw_dir=os.path.join(raw_dir, "gmail"),
                 normalized_dir=norm_gmail_dir,
-                company_domains=norm_config.get("company_domains", [])
+                company_domains=norm_config.get("company_domains", []),
+                agent_names=agent_names
             )
             count = len(normalizer.normalize_all())
             logger.info(f"Normalized {count} Gmail files.")
@@ -148,7 +158,7 @@ def run_pipeline(config: dict, step: str = None):
             normalizer = WhatsAppNormalizer(
                 raw_dir=os.path.join(raw_dir, "whatsapp"),
                 normalized_dir=norm_wa_dir,
-                agent_names=whatsapp_conf.get("agent_names", [])
+                agent_names=agent_names
             )
             count = len(normalizer.normalize_all())
             logger.info(f"Normalized {count} WhatsApp files.")
@@ -242,7 +252,8 @@ def run_pipeline(config: dict, step: str = None):
             input_dir=anonymized_dir,
             output_dir=datasets_dir,
             version=dataset_conf.get("version", "1.0.0"),
-            system_prompt=dataset_conf.get("system_prompt", None)
+            system_prompt=dataset_conf.get("system_prompt", None),
+            approved_path=os.path.join(project_root, "approved.json")
         )
         # Configure file outputs dynamically
         jsonl_fn = dataset_conf.get("jsonl_filename", "conversations.jsonl")
@@ -268,7 +279,8 @@ def run_pipeline(config: dict, step: str = None):
                 model=annotator_conf.get("model", "llama-3.1-8b-instant"),
                 intent_filename=annotator_conf.get("intent_filename", "intent_labels.jsonl"),
                 sentiment_filename=annotator_conf.get("sentiment_filename", "sentiment_labels.jsonl"),
-                summary_filename=annotator_conf.get("summary_filename", "summaries.jsonl")
+                summary_filename=annotator_conf.get("summary_filename", "summaries.jsonl"),
+                approved_path=os.path.join(project_root, "approved.json")
             )
             counts = annotator.process_all()
             logger.info(
@@ -291,7 +303,8 @@ def run_pipeline(config: dict, step: str = None):
                 output_dir=datasets_dir,
                 chunk_size_turns=rag_conf.get("chunk_size_turns", 4),
                 chunk_overlap_turns=rag_conf.get("chunk_overlap_turns", 2),
-                rag_filename=rag_conf.get("rag_filename", "rag_chunks.jsonl")
+                rag_filename=rag_conf.get("rag_filename", "rag_chunks.jsonl"),
+                approved_path=os.path.join(project_root, "approved.json")
             )
             counts = generator.process_all()
             logger.info(

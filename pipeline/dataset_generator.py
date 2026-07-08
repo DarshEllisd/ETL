@@ -10,7 +10,8 @@ class DatasetGenerator:
         input_dir: str,
         output_dir: str,
         version: str = "1.0.0",
-        system_prompt: str = None
+        system_prompt: str = None,
+        approved_path: str = None
     ):
         """
         Initialize DatasetGenerator.
@@ -18,11 +19,13 @@ class DatasetGenerator:
         :param output_dir: Directory to save the final dataset artifacts (usually 'datasets/').
         :param version: Version string for the generated dataset (e.g. '1.0.0').
         :param system_prompt: Optional system prompt to prepend to every message history list.
+        :param approved_path: Optional path to approved.json whitelist file.
         """
         self.input_dir = os.path.abspath(input_dir)
         self.output_dir = os.path.abspath(output_dir)
         self.version = version
         self.system_prompt = system_prompt
+        self.approved_path = approved_path
         os.makedirs(self.output_dir, exist_ok=True)
 
     def load_conversations(self) -> List[Dict[str, Any]]:
@@ -34,10 +37,9 @@ class DatasetGenerator:
             return conversations
             
         approved = []
-        approved_path = "approved.json"
-        if os.path.exists(approved_path):
+        if self.approved_path and os.path.exists(self.approved_path):
             try:
-                with open(approved_path, 'r', encoding='utf-8') as f:
+                with open(self.approved_path, 'r', encoding='utf-8') as f:
                     approved = json.load(f)
             except Exception:
                 pass
@@ -60,7 +62,7 @@ class DatasetGenerator:
                         if conv_id:
                             if conv_id in exclusions:
                                 continue
-                            if os.path.exists(approved_path) and conv_id not in approved:
+                            if self.approved_path and os.path.exists(self.approved_path) and conv_id not in approved:
                                 continue
                         conversations.append(data)
                 except Exception as e:

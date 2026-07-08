@@ -13,7 +13,8 @@ class RAGGenerator:
         output_dir: str,
         chunk_size_turns: int = 4,
         chunk_overlap_turns: int = 2,
-        rag_filename: str = "rag_chunks.jsonl"
+        rag_filename: str = "rag_chunks.jsonl",
+        approved_path: str = None
     ):
         """
         Initialize RAGGenerator.
@@ -22,12 +23,14 @@ class RAGGenerator:
         :param chunk_size_turns: Number of message turns in each semantic chunk.
         :param chunk_overlap_turns: Overlap turns between consecutive chunks.
         :param rag_filename: Target filename for RAG chunks JSONL.
+        :param approved_path: Optional path to approved.json whitelist file.
         """
         self.input_dir = os.path.abspath(input_dir)
         self.output_dir = os.path.abspath(output_dir)
         self.chunk_size_turns = chunk_size_turns
         self.chunk_overlap_turns = chunk_overlap_turns
         self.rag_filename = rag_filename
+        self.approved_path = approved_path
         os.makedirs(self.output_dir, exist_ok=True)
 
         if self.chunk_size_turns <= self.chunk_overlap_turns:
@@ -39,10 +42,9 @@ class RAGGenerator:
             return conversations
             
         approved = []
-        approved_path = "approved.json"
-        if os.path.exists(approved_path):
+        if self.approved_path and os.path.exists(self.approved_path):
             try:
-                with open(approved_path, 'r', encoding='utf-8') as f:
+                with open(self.approved_path, 'r', encoding='utf-8') as f:
                     approved = json.load(f)
             except Exception:
                 pass
@@ -65,7 +67,7 @@ class RAGGenerator:
                         if conv_id:
                             if conv_id in exclusions:
                                 continue
-                            if os.path.exists(approved_path) and conv_id not in approved:
+                            if self.approved_path and os.path.exists(self.approved_path) and conv_id not in approved:
                                 continue
                         conversations.append(data)
                 except Exception as e:
