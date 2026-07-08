@@ -230,6 +230,17 @@
                     </div>
                 </div>
 
+                <!-- Pending Inbox Panel -->
+                <div class="preview-panel" id="auditor-pending-container" style="display: none; margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.2);">
+                    <h2>Pending Inbox (<span id="pending-count-lbl">0</span> items require review)</h2>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+                        Newly ingested conversations requiring permission to be compiled into the training set.
+                    </p>
+                    <div class="preview-scroller" id="pending-messages-list" style="max-height: 250px; margin-bottom: 8px;">
+                        <!-- Pending records render here -->
+                    </div>
+                </div>
+
                 <!-- Preview Grid Conversations -->
                 <div class="preview-panel" id="auditor-preview-container" style="display: none;">
                     <h2>Instruction Dataset Preview (`conversations.jsonl`)</h2>

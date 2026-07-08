@@ -27,6 +27,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const lblGmailCount = document.getElementById("lbl-gmail-count");
     const lblWhatsappCount = document.getElementById("lbl-whatsapp-count");
     const previewMessagesList = document.getElementById("preview-messages-list");
+    const auditorPendingContainer = document.getElementById("auditor-pending-container");
+    const pendingCountLbl = document.getElementById("pending-count-lbl");
+    const pendingMessagesList = document.getElementById("pending-messages-list");
 
     // Diff elements
     const diffV1Select = document.getElementById("diff-v1-select");
@@ -251,6 +254,8 @@ document.addEventListener("DOMContentLoaded", () => {
             auditorMetricsGrid.style.display = "grid";
             auditorVizContainer.style.display = "grid";
             auditorPreviewContainer.style.display = "block";
+            auditorPendingContainer.style.display = "block";
+            pendingCountLbl.innerText = data.pending ? data.pending.length : 0;
 
             // Card details
             audConvCount.innerText = data.metadata.total_conversations || 0;
@@ -324,6 +329,53 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
             }
 
+            // Pending list preview builder
+            pendingMessagesList.innerHTML = "";
+            if (!data.pending || data.pending.length === 0) {
+                pendingMessagesList.innerHTML = '<p class="text-secondary" style="font-size: 13px; padding: 12px;">No pending conversations require review.</p>';
+            } else {
+                data.pending.forEach((row, i) => {
+                    const convCard = document.createElement("div");
+                    convCard.className = "preview-conv";
+                    convCard.style.borderColor = "rgba(99, 102, 241, 0.15)";
+                    
+                    const header = document.createElement("div");
+                    header.className = "preview-conv-header";
+                    
+                    const title = document.createElement("div");
+                    title.className = "preview-conv-title";
+                    title.innerText = `PENDING RECORD #${i + 1} (${row.conversation_id || "Unknown ID"})`;
+                    header.appendChild(title);
+                    
+                    const approveBtn = document.createElement("button");
+                    approveBtn.className = "btn-approve";
+                    approveBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Add to Dataset';
+                    approveBtn.addEventListener("click", () => {
+                        approveConversation(version, row.conversation_id);
+                    });
+                    header.appendChild(approveBtn);
+                    convCard.appendChild(header);
+                    
+                    row.messages.forEach(msg => {
+                        const msgDiv = document.createElement("div");
+                        msgDiv.className = "preview-msg";
+                        
+                        const roleSpan = document.createElement("span");
+                        roleSpan.className = `msg-role ${msg.role}`;
+                        roleSpan.innerText = `${msg.role}:`;
+                        
+                        const textSpan = document.createElement("span");
+                        textSpan.className = "msg-text";
+                        textSpan.innerText = msg.content;
+                        
+                        msgDiv.appendChild(roleSpan);
+                        msgDiv.appendChild(textSpan);
+                        convCard.appendChild(msgDiv);
+                    });
+                    pendingMessagesList.appendChild(convCard);
+                });
+            }
+
         } catch (err) {
             console.error("Failed to load dataset details:", err);
         }
@@ -353,6 +405,33 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         } catch (err) {
             alert(`Failed to exclude conversation: ${err}`);
+        }
+    }
+
+    async function approveConversation(version, conversationId) {
+        if (!conversationId) {
+            alert("Cannot approve: Conversation ID not found.");
+            return;
+        }
+        if (!confirm(`Are you sure you want to approve conversation ${conversationId} and add it to the dataset?`)) {
+            return;
+        }
+        
+        try {
+            const res = await fetch("/api/approve-conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ version, conversation_id: conversationId })
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert(`Error: ${data.error}`);
+            } else {
+                loadDatasetDetails(version);
+                loadStatus();
+            }
+        } catch (err) {
+            alert(`Failed to approve conversation: ${err}`);
         }
     }
 

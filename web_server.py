@@ -41,6 +41,8 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_api_diff()
         elif parsed_url.path == "/api/exclude-conversation":
             self.handle_api_exclude_conversation()
+        elif parsed_url.path == "/api/approve-conversation":
+            self.handle_api_approve_conversation()
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -131,10 +133,48 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         pass
                         
+        # Load pending review conversations (in normalized/anonymized/ but not in approved.json)
+        approved = []
+        approved_path = os.path.join(project_root, "approved.json")
+        if os.path.exists(approved_path):
+            try:
+                with open(approved_path, 'r', encoding='utf-8') as f:
+                    approved = json.load(f)
+            except Exception:
+                pass
+                
+        pending_rows = []
+        anonymized_dir = os.path.join(project_root, "normalized", "anonymized")
+        if os.path.exists(anonymized_dir):
+            for filename in sorted(os.listdir(anonymized_dir)):
+                if filename.endswith(".json"):
+                    path = os.path.join(anonymized_dir, filename)
+                    try:
+                        with open(path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            conv_id = data.get("conversation_id")
+                            if conv_id and conv_id not in approved:
+                                messages = []
+                                for m in data.get("messages", [])[:5]:
+                                    role = m.get("speaker", "user")
+                                    if role not in ["user", "assistant", "system"]:
+                                        role = "user"
+                                    messages.append({
+                                        "role": role,
+                                        "content": m.get("text", "")
+                                    })
+                                pending_rows.append({
+                                    "conversation_id": conv_id,
+                                    "messages": messages
+                                })
+                    except Exception:
+                        pass
+
         self.send_json_response(200, {
             "metadata": meta,
             "statistics": stats,
-            "preview": preview_rows
+            "preview": preview_rows,
+            "pending": pending_rows
         })
 
     def handle_api_run(self):
@@ -246,6 +286,75 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             self.send_json_response(500, {"error": f"Failed to exclude conversation: {str(e)}"})
 
+    def handle_api_approve_conversation(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            data = json.loads(post_data)
+            version = data.get("version")
+            conversation_id = data.get("conversation_id")
+            
+            if not version or not conversation_id:
+                self.send_json_response(400, {"error": "Missing parameters 'version' or 'conversation_id'"})
+                return
+                
+            approved_path = os.path.join(project_root, "approved.json")
+            approved = []
+            if os.path.exists(approved_path):
+                try:
+                    with open(approved_path, 'r', encoding='utf-8') as f:
+                        approved = json.load(f)
+                except Exception:
+                    pass
+            
+            if conversation_id not in approved:
+                approved.append(conversation_id)
+                with open(approved_path, 'w', encoding='utf-8') as f:
+                    json.dump(approved, f, indent=2)
+            
+            # Remove from exclusions if it is there
+            exclusions_path = os.path.join(project_root, "exclusions.json")
+            if os.path.exists(exclusions_path):
+                try:
+                    with open(exclusions_path, 'r', encoding='utf-8') as f:
+                        exclusions = json.load(f)
+                    if conversation_id in exclusions:
+                        exclusions.remove(conversation_id)
+                        with open(exclusions_path, 'w', encoding='utf-8') as f:
+                            json.dump(exclusions, f, indent=2)
+                except Exception:
+                    pass
+            
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if not os.path.exists(config_path):
+                self.send_json_response(400, {"error": "Config file configs/config.yaml not found"})
+                return
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            version_str = version[1:] if version.startswith("v") else version
+            if "dataset" not in config:
+                config["dataset"] = {}
+            config["dataset"]["version"] = version_str
+            
+            setup_logging(config.get("logging", {}), verbose=False)
+            run_pipeline(config, "export")
+            
+            annotator_conf = config.get("annotator", {})
+            if annotator_conf.get("enabled", True):
+                run_pipeline(config, "annotate")
+                
+            rag_conf = config.get("rag", {})
+            if rag_conf.get("enabled", True):
+                run_pipeline(config, "rag")
+            
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to approve conversation: {str(e)}"})
+
     def send_json_response(self, status, data):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -254,6 +363,22 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
 
 def run_server():
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    approved_path = os.path.join(project_root, "approved.json")
+    if not os.path.exists(approved_path):
+        baseline_ids = [
+            "email_thread_9275c84ee0b3ad4be861527e53e8c415_session_0",
+            "email_thread_c594e1d3c87a01c7027e0e89377593de_session_0",
+            "whatsapp_chat_58be2551518134d646da77ebdd1d6363_session_0",
+            "whatsapp_chat_cd4fb49f9acb9d6bb54456e9774ce154_session_0",
+            "whatsapp_chat_cd4fb49f9acb9d6bb54456e9774ce154_session_1"
+        ]
+        try:
+            with open(approved_path, 'w', encoding='utf-8') as f:
+                json.dump(baseline_ids, f, indent=2)
+        except Exception as e:
+            print(f"Failed to bootstrap approved.json: {e}")
+            
     PORT = 8000
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), ETLDashboardHandler) as httpd:
