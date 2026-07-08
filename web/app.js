@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Pipeline elements
     const runBtn = document.getElementById("run-pipeline-btn");
+    const cleanSlateBtn = document.getElementById("clean-slate-btn");
     const consoleOutput = document.getElementById("console-output");
     const clearConsoleBtn = document.getElementById("clear-console-btn");
     
@@ -642,6 +643,47 @@ document.addEventListener("DOMContentLoaded", () => {
         } finally {
             approveAllBtn.disabled = false;
             approveAllBtn.innerHTML = origHtml;
+        }
+    });
+
+    // Clean slate handler
+    cleanSlateBtn.addEventListener("click", async () => {
+        if (!confirm("Are you sure you want to Clean Slate? This will wipe out all normalized/anonymized files, generated datasets, annotations, exclusions, and custom role assignments. Your raw inputs under raw/ will be preserved.")) {
+            return;
+        }
+        
+        cleanSlateBtn.disabled = true;
+        const origHtml = cleanSlateBtn.innerHTML;
+        cleanSlateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Cleaning...';
+        
+        try {
+            const res = await fetch("/api/clean-slate", {
+                method: "POST"
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert(`Error clearing: ${data.error}`);
+            } else {
+                alert("Clean Slate complete! All normalized logs and datasets wiped.");
+                loadStatus();
+                // Select first version or reload
+                const version = audVersionSelect.value;
+                if (version) {
+                    loadDatasetDetails(version);
+                } else {
+                    // Hide metrics
+                    auditorMetricsGrid.style.display = "none";
+                    auditorVizContainer.style.display = "none";
+                    auditorPreviewContainer.style.display = "none";
+                    auditorPendingContainer.style.display = "none";
+                    auditorRolesContainer.style.display = "none";
+                }
+            }
+        } catch (err) {
+            alert(`Failed to clean slate: ${err}`);
+        } finally {
+            cleanSlateBtn.disabled = false;
+            cleanSlateBtn.innerHTML = origHtml;
         }
     });
 
