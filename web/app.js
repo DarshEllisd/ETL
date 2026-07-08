@@ -287,10 +287,22 @@ document.addEventListener("DOMContentLoaded", () => {
                     const convCard = document.createElement("div");
                     convCard.className = "preview-conv";
                     
+                    const header = document.createElement("div");
+                    header.className = "preview-conv-header";
+                    
                     const title = document.createElement("div");
                     title.className = "preview-conv-title";
-                    title.innerText = `CONVERSATION RECORD #${i + 1}`;
-                    convCard.appendChild(title);
+                    title.innerText = `CONVERSATION RECORD #${i + 1} (${row.conversation_id || "Unknown ID"})`;
+                    header.appendChild(title);
+                    
+                    const excludeBtn = document.createElement("button");
+                    excludeBtn.className = "btn-exclude";
+                    excludeBtn.innerHTML = '<i class="fa-solid fa-trash"></i> Exclude';
+                    excludeBtn.addEventListener("click", () => {
+                        excludeConversation(version, row.conversation_id);
+                    });
+                    header.appendChild(excludeBtn);
+                    convCard.appendChild(header);
                     
                     row.messages.forEach(msg => {
                         const msgDiv = document.createElement("div");
@@ -314,6 +326,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
         } catch (err) {
             console.error("Failed to load dataset details:", err);
+        }
+    }
+
+    async function excludeConversation(version, conversationId) {
+        if (!conversationId) {
+            alert("Cannot exclude: Conversation ID not found.");
+            return;
+        }
+        if (!confirm(`Are you sure you want to persistently exclude conversation ${conversationId}?`)) {
+            return;
+        }
+        
+        try {
+            const res = await fetch("/api/exclude-conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ version, conversation_id: conversationId })
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert(`Error: ${data.error}`);
+            } else {
+                loadDatasetDetails(version);
+                loadStatus();
+            }
+        } catch (err) {
+            alert(`Failed to exclude conversation: ${err}`);
         }
     }
 

@@ -39,6 +39,8 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_api_run()
         elif parsed_url.path == "/api/diff":
             self.handle_api_diff()
+        elif parsed_url.path == "/api/exclude-conversation":
+            self.handle_api_exclude_conversation()
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -187,6 +189,62 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response(200, report)
         except Exception as e:
             self.send_json_response(500, {"error": f"Comparison failed: {str(e)}"})
+
+    def handle_api_exclude_conversation(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            data = json.loads(post_data)
+            version = data.get("version")
+            conversation_id = data.get("conversation_id")
+            
+            if not version or not conversation_id:
+                self.send_json_response(400, {"error": "Missing parameters 'version' or 'conversation_id'"})
+                return
+                
+            exclusions_path = os.path.join(project_root, "exclusions.json")
+            exclusions = []
+            if os.path.exists(exclusions_path):
+                try:
+                    with open(exclusions_path, 'r', encoding='utf-8') as f:
+                        exclusions = json.load(f)
+                except Exception:
+                    pass
+            
+            if conversation_id not in exclusions:
+                exclusions.append(conversation_id)
+                with open(exclusions_path, 'w', encoding='utf-8') as f:
+                    json.dump(exclusions, f, indent=2)
+            
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if not os.path.exists(config_path):
+                self.send_json_response(400, {"error": "Config file configs/config.yaml not found"})
+                return
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            version_str = version[1:] if version.startswith("v") else version
+            if "dataset" not in config:
+                config["dataset"] = {}
+            config["dataset"]["version"] = version_str
+            
+            setup_logging(config.get("logging", {}), verbose=False)
+            run_pipeline(config, "export")
+            
+            annotator_conf = config.get("annotator", {})
+            if annotator_conf.get("enabled", True):
+                run_pipeline(config, "annotate")
+                
+            rag_conf = config.get("rag", {})
+            if rag_conf.get("enabled", True):
+                run_pipeline(config, "rag")
+            
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to exclude conversation: {str(e)}"})
 
     def send_json_response(self, status, data):
         self.send_response(status)
