@@ -16,18 +16,23 @@ class BaseNormalizer:
         return hashlib.md5(text.encode('utf-8')).hexdigest()
 
 class GmailNormalizer(BaseNormalizer):
-    def __init__(self, raw_dir: str, normalized_dir: str, company_domains: List[str] = None):
+    def __init__(self, raw_dir: str, normalized_dir: str, company_domains: List[str] = None, agent_names: List[str] = None):
         super().__init__(raw_dir, normalized_dir)
         self.company_domains = company_domains or ['shop.com']
+        self.agent_names = [name.lower().strip() for name in (agent_names or [])]
 
     def normalize_speaker(self, from_header: str) -> str:
         """
         Determines the role of the sender.
-        If sender email domain is in company_domains, it's 'assistant', else 'user'.
+        If sender email or name matches agent_names, or if domain is in company_domains, it's 'assistant', else 'user'.
         """
         name, email_address = email.utils.parseaddr(from_header)
         email_address = email_address.lower().strip()
+        name = name.lower().strip()
         
+        if email_address in self.agent_names or name in self.agent_names:
+            return "assistant"
+            
         # Check if the domain matches any company domain
         for domain in self.company_domains:
             if email_address.endswith(f"@{domain}") or email_address.endswith(f".{domain}"):

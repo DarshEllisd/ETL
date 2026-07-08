@@ -128,6 +128,15 @@ def run_pipeline(config: dict, step: str = None):
     if run_all or step == "normalize":
         logger.info("Stage 2: Normalizing raw data...")
         
+        agent_names = config.get("connectors", {}).get("whatsapp", {}).get("agent_names", [])
+        agents_json_path = os.path.join(project_root, "agents.json")
+        if os.path.exists(agents_json_path):
+            try:
+                with open(agents_json_path, 'r', encoding='utf-8') as f:
+                    agent_names = json.load(f)
+            except Exception:
+                pass
+        
         # Gmail normalizer
         gmail_conf = config.get("connectors", {}).get("gmail", {})
         if gmail_conf.get("enabled", True):
@@ -136,7 +145,8 @@ def run_pipeline(config: dict, step: str = None):
             normalizer = GmailNormalizer(
                 raw_dir=os.path.join(raw_dir, "gmail"),
                 normalized_dir=norm_gmail_dir,
-                company_domains=norm_config.get("company_domains", [])
+                company_domains=norm_config.get("company_domains", []),
+                agent_names=agent_names
             )
             count = len(normalizer.normalize_all())
             logger.info(f"Normalized {count} Gmail files.")
@@ -148,7 +158,7 @@ def run_pipeline(config: dict, step: str = None):
             normalizer = WhatsAppNormalizer(
                 raw_dir=os.path.join(raw_dir, "whatsapp"),
                 normalized_dir=norm_wa_dir,
-                agent_names=whatsapp_conf.get("agent_names", [])
+                agent_names=agent_names
             )
             count = len(normalizer.normalize_all())
             logger.info(f"Normalized {count} WhatsApp files.")

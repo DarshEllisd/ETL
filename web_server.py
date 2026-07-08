@@ -43,6 +43,8 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_api_exclude_conversation()
         elif parsed_url.path == "/api/approve-conversation":
             self.handle_api_approve_conversation()
+        elif parsed_url.path == "/api/save-roles":
+            self.handle_api_save_roles()
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -170,11 +172,52 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
+        # Load unique participants from reconstructed sessions
+        participants = []
+        reconstructed_dir = os.path.join(project_root, "normalized", "reconstructed")
+        if os.path.exists(reconstructed_dir):
+            unique_set = set()
+            for filename in os.listdir(reconstructed_dir):
+                if filename.endswith(".json"):
+                    path = os.path.join(reconstructed_dir, filename)
+                    try:
+                        with open(path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            for msg in data.get("messages", []):
+                                name = msg.get("metadata", {}).get("raw_speaker_name")
+                                if name:
+                                    unique_set.add(name)
+                    except Exception:
+                        pass
+            participants = sorted(list(unique_set))
+            
+        # Load currently assigned agents
+        agents = []
+        agents_path = os.path.join(project_root, "agents.json")
+        if os.path.exists(agents_path):
+            try:
+                with open(agents_path, 'r', encoding='utf-8') as f:
+                    agents = json.load(f)
+            except Exception:
+                pass
+        else:
+            # Fallback to defaults from config.yaml
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = yaml.safe_load(f)
+                        agents = config.get("connectors", {}).get("whatsapp", {}).get("agent_names", [])
+                except Exception:
+                    pass
+
         self.send_json_response(200, {
             "metadata": meta,
             "statistics": stats,
             "preview": preview_rows,
-            "pending": pending_rows
+            "pending": pending_rows,
+            "participants": participants,
+            "agents": agents
         })
 
     def handle_api_run(self):
@@ -274,7 +317,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             setup_logging(config.get("logging", {}), verbose=False)
             run_pipeline(config, "export")
             
-            annotator_conf = config.get("annotator", {})
+            annotator_conf = config.get("annotation", {})
             if annotator_conf.get("enabled", True):
                 run_pipeline(config, "annotate")
                 
@@ -343,7 +386,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             setup_logging(config.get("logging", {}), verbose=False)
             run_pipeline(config, "export")
             
-            annotator_conf = config.get("annotator", {})
+            annotator_conf = config.get("annotation", {})
             if annotator_conf.get("enabled", True):
                 run_pipeline(config, "annotate")
                 
@@ -354,6 +397,54 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response(200, {"status": "success"})
         except Exception as e:
             self.send_json_response(500, {"error": f"Failed to approve conversation: {str(e)}"})
+
+    def handle_api_save_roles(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            data = json.loads(post_data)
+            version = data.get("version", "v1.0.0")
+            agents = data.get("agents", [])
+            
+            agents_path = os.path.join(project_root, "agents.json")
+            with open(agents_path, 'w', encoding='utf-8') as f:
+                json.dump(agents, f, indent=2)
+                
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if not os.path.exists(config_path):
+                self.send_json_response(400, {"error": "Config file configs/config.yaml not found"})
+                return
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            version_str = version[1:] if version.startswith("v") else version
+            if "dataset" not in config:
+                config["dataset"] = {}
+            config["dataset"]["version"] = version_str
+            
+            # Re-run all pipeline steps to reclassify users/assistants and regenerate metrics
+            setup_logging(config.get("logging", {}), verbose=False)
+            run_pipeline(config, "normalize")
+            run_pipeline(config, "merge")
+            run_pipeline(config, "reconstruct")
+            run_pipeline(config, "clean")
+            run_pipeline(config, "anonymize")
+            run_pipeline(config, "export")
+            
+            annotator_conf = config.get("annotation", {})
+            if annotator_conf.get("enabled", True):
+                run_pipeline(config, "annotate")
+                
+            rag_conf = config.get("rag", {})
+            if rag_conf.get("enabled", True):
+                run_pipeline(config, "rag")
+                
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to save roles: {str(e)}"})
 
     def send_json_response(self, status, data):
         self.send_response(status)

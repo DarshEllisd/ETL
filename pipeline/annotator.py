@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import logging
 import urllib.request
 import urllib.error
@@ -85,7 +86,32 @@ class ConversationAnnotator:
         """
         api_key = os.environ.get(self.api_key_env, "").strip()
         if not api_key:
-            raise ValueError("Groq API key not found in environment.")
+            # Try to read .env from project root (one level up from pipeline/)
+            env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+            if os.path.exists(env_path):
+                content = ""
+                try:
+                    with open(env_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                except UnicodeDecodeError:
+                    try:
+                        with open(env_path, 'r', encoding='utf-16') as f:
+                            content = f.read()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                
+                if content:
+                    for line in content.splitlines():
+                        if line.strip() and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            if k.strip() == self.api_key_env:
+                                api_key = v.strip().strip('"').strip("'")
+                                break
+                    
+        if not api_key:
+            raise ValueError("Groq API key not found in environment or .env file.")
 
         url = "https://api.groq.com/openai/v1/chat/completions"
         
@@ -270,6 +296,7 @@ class ConversationAnnotator:
                 annotations = None
                 if api_key:
                     try:
+                        time.sleep(1.5)  # Delay between API calls to avoid Groq Rate Limit (429)
                         annotations = self.call_groq_api(conv_text)
                         counts["llm_calls_succeeded"] += 1
                         logger.info(f"Successfully annotated conversation '{conv_id}' using Groq LLM.")
