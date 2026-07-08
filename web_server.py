@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import yaml
+import shutil
 import http.server
 import socketserver
 import urllib.parse
@@ -47,6 +48,8 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_api_approve_all_conversations()
         elif parsed_url.path == "/api/save-roles":
             self.handle_api_save_roles()
+        elif parsed_url.path == "/api/clean-slate":
+            self.handle_api_clean_slate()
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -539,6 +542,102 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response(200, {"status": "success"})
         except Exception as e:
             self.send_json_response(500, {"error": f"Failed to save roles: {str(e)}"})
+
+    def handle_api_clean_slate(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        try:
+            # 0. Delete raw folder contents (which are temporary JSON files generated from mock_data)
+            raw_dir = os.path.join(project_root, "raw")
+            if os.path.exists(raw_dir):
+                for item in os.listdir(raw_dir):
+                    if item == ".gitkeep":
+                        continue
+                    item_path = os.path.join(raw_dir, item)
+                    try:
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                    except Exception:
+                        pass
+                        
+            # 1. Delete normalized folder contents
+            normalized_dir = os.path.join(project_root, "normalized")
+            if os.path.exists(normalized_dir):
+                for item in os.listdir(normalized_dir):
+                    item_path = os.path.join(normalized_dir, item)
+                    try:
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                    except Exception:
+                        pass
+                        
+            # 2. Delete datasets contents (excluding .gitkeep)
+            datasets_dir = os.path.join(project_root, "datasets")
+            if os.path.exists(datasets_dir):
+                for item in os.listdir(datasets_dir):
+                    if item == ".gitkeep":
+                        continue
+                    item_path = os.path.join(datasets_dir, item)
+                    try:
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                    except Exception:
+                        pass
+            
+            # 3. Reset approved.json to only contain baseline IDs
+            approved_path = os.path.join(project_root, "approved.json")
+            if os.path.exists(approved_path):
+                try:
+                    os.remove(approved_path)
+                except Exception:
+                    pass
+            
+            baseline_ids = [
+                "email_thread_9275c84ee0b3ad4be861527e53e8c415_session_0",
+                "email_thread_c594e1d3c87a01c7027e0e89377593de_session_0",
+                "whatsapp_chat_58be2551518134d646da77ebdd1d6363_session_0",
+                "whatsapp_chat_cd4fb49f9acb9d6bb54456e9774ce154_session_0",
+                "whatsapp_chat_cd4fb49f9acb9d6bb54456e9774ce154_session_1"
+            ]
+            try:
+                with open(approved_path, 'w', encoding='utf-8') as f:
+                    json.dump(baseline_ids, f, indent=2)
+            except Exception:
+                pass
+                
+            # 4. Remove exclusions.json
+            exclusions_path = os.path.join(project_root, "exclusions.json")
+            if os.path.exists(exclusions_path):
+                try:
+                    os.remove(exclusions_path)
+                except Exception:
+                    pass
+                
+            # 5. Remove agents.json
+            agents_path = os.path.join(project_root, "agents.json")
+            if os.path.exists(agents_path):
+                try:
+                    os.remove(agents_path)
+                except Exception:
+                    pass
+                
+            # 6. Remove report files
+            for report in ["validation_report.json", "privacy_report.json"]:
+                p = os.path.join(project_root, report)
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+                    
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to clean slate: {str(e)}"})
 
     def send_json_response(self, status, data):
         self.send_response(status)

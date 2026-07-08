@@ -87,9 +87,14 @@
                 <div class="action-panel">
                     <div class="run-control-header">
                         <h2>Pipeline Execution Progress</h2>
-                        <button id="run-pipeline-btn" class="btn primary-btn">
-                            <i class="fa-solid fa-play"></i> Launch ETL Run
-                        </button>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <button id="run-pipeline-btn" class="btn primary-btn" style="margin: 0;">
+                                <i class="fa-solid fa-play"></i> Launch ETL Run
+                            </button>
+                            <button id="clean-slate-btn" class="btn-exclude" style="padding: 10px 16px; font-size: 13px; border-radius: 4px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <i class="fa-solid fa-eraser"></i> Clean Slate
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Pipeline Steps Progress Vis -->
