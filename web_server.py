@@ -546,6 +546,21 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
     def handle_api_clean_slate(self):
         project_root = os.path.dirname(os.path.abspath(__file__))
         try:
+            # 0. Delete raw folder contents (which are temporary JSON files generated from mock_data)
+            raw_dir = os.path.join(project_root, "raw")
+            if os.path.exists(raw_dir):
+                for item in os.listdir(raw_dir):
+                    if item == ".gitkeep":
+                        continue
+                    item_path = os.path.join(raw_dir, item)
+                    try:
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                    except Exception:
+                        pass
+                        
             # 1. Delete normalized folder contents
             normalized_dir = os.path.join(project_root, "normalized")
             if os.path.exists(normalized_dir):
