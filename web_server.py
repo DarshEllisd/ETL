@@ -123,12 +123,12 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
         meta = load_json("metadata.json")
         stats = load_json("statistics.json")
         
-        # Load preview of conversations.jsonl (first 5 rows)
+        # Load preview of conversations.jsonl (first 50 rows)
         preview_rows = []
         jsonl_path = os.path.join(version_dir, "conversations.jsonl")
         if os.path.exists(jsonl_path):
             with open(jsonl_path, 'r', encoding='utf-8') as f:
-                for _ in range(5):
+                for _ in range(50):
                     line = f.readline()
                     if not line:
                         break
