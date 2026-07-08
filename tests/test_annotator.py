@@ -7,6 +7,7 @@ from pipeline import ConversationAnnotator
 
 class TestConversationAnnotator(unittest.TestCase):
     def setUp(self):
+        os.environ["ETL_TESTING"] = "true"
         self.test_dir = tempfile.mkdtemp()
         self.input_dir = os.path.join(self.test_dir, "input")
         self.output_dir = os.path.join(self.test_dir, "output")

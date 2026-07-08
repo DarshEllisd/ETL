@@ -80,10 +80,9 @@ class ConversationAnnotator:
                     logger.error(f"Failed to load conversation file {filename}: {e}")
         return conversations
 
-    def call_groq_api(self, conversation_text: str) -> Dict[str, Any]:
-        """
-        Performs direct HTTP request to the Groq API using urllib.
-        """
+    def get_api_key(self) -> str:
+        if os.environ.get("ETL_TESTING") == "true":
+            return ""
         api_key = os.environ.get(self.api_key_env, "").strip()
         if not api_key:
             # Try to read .env from project root (one level up from pipeline/)
@@ -109,7 +108,13 @@ class ConversationAnnotator:
                             if k.strip() == self.api_key_env:
                                 api_key = v.strip().strip('"').strip("'")
                                 break
-                    
+        return api_key
+
+    def call_groq_api(self, conversation_text: str) -> Dict[str, Any]:
+        """
+        Performs direct HTTP request to the Groq API using urllib.
+        """
+        api_key = self.get_api_key()
         if not api_key:
             raise ValueError("Groq API key not found in environment or .env file.")
 
@@ -274,7 +279,7 @@ class ConversationAnnotator:
             if os.path.exists(path):
                 os.remove(path)
 
-        api_key = os.environ.get(self.api_key_env, "").strip()
+        api_key = self.get_api_key()
         
         counts = {
             "conversations_processed": 0,
@@ -300,8 +305,8 @@ class ConversationAnnotator:
                         annotations = self.call_groq_api(conv_text)
                         counts["llm_calls_succeeded"] += 1
                         logger.info(f"Successfully annotated conversation '{conv_id}' using Groq LLM.")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Groq API call failed for '{conv_id}': {e}. Falling back to offline annotator.")
                         
                 if not annotations:
                     annotations = self.fallback_annotate(conv)
