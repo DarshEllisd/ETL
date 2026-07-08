@@ -242,7 +242,8 @@ def run_pipeline(config: dict, step: str = None):
             input_dir=anonymized_dir,
             output_dir=datasets_dir,
             version=dataset_conf.get("version", "1.0.0"),
-            system_prompt=dataset_conf.get("system_prompt", None)
+            system_prompt=dataset_conf.get("system_prompt", None),
+            approved_path=os.path.join(project_root, "approved.json")
         )
         # Configure file outputs dynamically
         jsonl_fn = dataset_conf.get("jsonl_filename", "conversations.jsonl")
@@ -268,7 +269,8 @@ def run_pipeline(config: dict, step: str = None):
                 model=annotator_conf.get("model", "llama-3.1-8b-instant"),
                 intent_filename=annotator_conf.get("intent_filename", "intent_labels.jsonl"),
                 sentiment_filename=annotator_conf.get("sentiment_filename", "sentiment_labels.jsonl"),
-                summary_filename=annotator_conf.get("summary_filename", "summaries.jsonl")
+                summary_filename=annotator_conf.get("summary_filename", "summaries.jsonl"),
+                approved_path=os.path.join(project_root, "approved.json")
             )
             counts = annotator.process_all()
             logger.info(
@@ -291,7 +293,8 @@ def run_pipeline(config: dict, step: str = None):
                 output_dir=datasets_dir,
                 chunk_size_turns=rag_conf.get("chunk_size_turns", 4),
                 chunk_overlap_turns=rag_conf.get("chunk_overlap_turns", 2),
-                rag_filename=rag_conf.get("rag_filename", "rag_chunks.jsonl")
+                rag_filename=rag_conf.get("rag_filename", "rag_chunks.jsonl"),
+                approved_path=os.path.join(project_root, "approved.json")
             )
             counts = generator.process_all()
             logger.info(

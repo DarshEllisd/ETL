@@ -17,7 +17,8 @@ class ConversationAnnotator:
         model: str = "llama-3.1-8b-instant",
         intent_filename: str = "intent_labels.jsonl",
         sentiment_filename: str = "sentiment_labels.jsonl",
-        summary_filename: str = "summaries.jsonl"
+        summary_filename: str = "summaries.jsonl",
+        approved_path: str = None
     ):
         """
         Initialize ConversationAnnotator.
@@ -28,6 +29,7 @@ class ConversationAnnotator:
         :param intent_filename: Target filename for intent labels JSONL.
         :param sentiment_filename: Target filename for sentiment labels JSONL.
         :param summary_filename: Target filename for summaries JSONL.
+        :param approved_path: Optional path to approved.json whitelist file.
         """
         self.input_dir = os.path.abspath(input_dir)
         self.output_dir = os.path.abspath(output_dir)
@@ -36,6 +38,7 @@ class ConversationAnnotator:
         self.intent_filename = intent_filename
         self.sentiment_filename = sentiment_filename
         self.summary_filename = summary_filename
+        self.approved_path = approved_path
         os.makedirs(self.output_dir, exist_ok=True)
 
     def load_conversations(self) -> List[Dict[str, Any]]:
@@ -44,10 +47,9 @@ class ConversationAnnotator:
             return conversations
             
         approved = []
-        approved_path = "approved.json"
-        if os.path.exists(approved_path):
+        if self.approved_path and os.path.exists(self.approved_path):
             try:
-                with open(approved_path, 'r', encoding='utf-8') as f:
+                with open(self.approved_path, 'r', encoding='utf-8') as f:
                     approved = json.load(f)
             except Exception:
                 pass
@@ -70,7 +72,7 @@ class ConversationAnnotator:
                         if conv_id:
                             if conv_id in exclusions:
                                 continue
-                            if os.path.exists(approved_path) and conv_id not in approved:
+                            if self.approved_path and os.path.exists(self.approved_path) and conv_id not in approved:
                                 continue
                         conversations.append(data)
                 except Exception as e:

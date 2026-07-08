@@ -17,6 +17,7 @@ connectors:
     agent_names:
       - "Jane Doe"
       - "Agent Bob"
+      - "Sonalika Rai DIBD Mentor"
 
 # Normalizer settings
 normalizer:
