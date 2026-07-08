@@ -172,24 +172,32 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
-        # Load unique participants from reconstructed sessions
+        # Load unique participants from normalized messages in gmail and whatsapp folders
         participants = []
-        reconstructed_dir = os.path.join(project_root, "normalized", "reconstructed")
-        if os.path.exists(reconstructed_dir):
-            unique_set = set()
-            for filename in os.listdir(reconstructed_dir):
-                if filename.endswith(".json"):
-                    path = os.path.join(reconstructed_dir, filename)
-                    try:
-                        with open(path, 'r', encoding='utf-8') as f:
-                            data = json.load(f)
-                            for msg in data.get("messages", []):
-                                name = msg.get("metadata", {}).get("raw_speaker_name")
+        unique_set = set()
+        for folder in ["gmail", "whatsapp"]:
+            folder_dir = os.path.join(project_root, "normalized", folder)
+            if os.path.exists(folder_dir):
+                for filename in os.listdir(folder_dir):
+                    if filename.endswith(".json"):
+                        path = os.path.join(folder_dir, filename)
+                        try:
+                            with open(path, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                                name = data.get("metadata", {}).get("raw_speaker_name")
                                 if name:
-                                    unique_set.add(name)
-                    except Exception:
-                        pass
-            participants = sorted(list(unique_set))
+                                    if "@" in name and ("<" in name or ">" in name):
+                                        import email.utils
+                                        parsed_name, parsed_email = email.utils.parseaddr(name)
+                                        if parsed_name:
+                                            unique_set.add(parsed_name)
+                                        if parsed_email:
+                                            unique_set.add(parsed_email)
+                                    else:
+                                        unique_set.add(name)
+                        except Exception:
+                            pass
+        participants = sorted(list(unique_set))
             
         # Load currently assigned agents
         agents = []
