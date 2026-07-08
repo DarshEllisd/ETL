@@ -118,7 +118,7 @@ class TestETLCLI(unittest.TestCase):
         norm_gmail = os.path.join(self.mock_config["directories"]["normalized_dir"], "gmail")
         self.assertTrue(os.path.exists(norm_gmail))
         
-        export_dir = self.mock_config["directories"]["datasets_dir"]
+        export_dir = os.path.join(self.mock_config["directories"]["datasets_dir"], "v1.0.0")
         self.assertTrue(os.path.exists(os.path.join(export_dir, "conversations.jsonl")))
         self.assertTrue(os.path.exists(os.path.join(export_dir, "metadata.json")))
         self.assertTrue(os.path.exists(os.path.join(export_dir, "statistics.json")))

@@ -42,12 +42,24 @@ class ConversationAnnotator:
         conversations = []
         if not os.path.exists(self.input_dir):
             return conversations
+            
+        exclusions = []
+        if os.path.exists("exclusions.json"):
+            try:
+                with open("exclusions.json", 'r', encoding='utf-8') as f:
+                    exclusions = json.load(f)
+            except Exception:
+                pass
+
         for filename in sorted(os.listdir(self.input_dir)):
             if filename.endswith(".json"):
                 path = os.path.join(self.input_dir, filename)
                 try:
                     with open(path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
+                        conv_id = data.get("conversation_id")
+                        if conv_id and conv_id in exclusions:
+                            continue
                         conversations.append(data)
                 except Exception as e:
                     logger.error(f"Failed to load conversation file {filename}: {e}")

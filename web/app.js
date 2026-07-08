@@ -1,0 +1,444 @@
+document.addEventListener("DOMContentLoaded", () => {
+    // Nav Tab elements
+    const navItems = document.querySelectorAll(".nav-item");
+    const tabPanels = document.querySelectorAll(".tab-panel");
+    const pageTitle = document.getElementById("page-title");
+    const pageDesc = document.getElementById("page-desc");
+
+    // Pipeline elements
+    const runBtn = document.getElementById("run-pipeline-btn");
+    const consoleOutput = document.getElementById("console-output");
+    const clearConsoleBtn = document.getElementById("clear-console-btn");
+    
+    // Auditor elements
+    const audVersionSelect = document.getElementById("auditor-version-select");
+    const auditorMetricsGrid = document.getElementById("auditor-metrics-grid");
+    const auditorVizContainer = document.getElementById("auditor-viz-container");
+    const auditorPreviewContainer = document.getElementById("auditor-preview-container");
+    const audConvCount = document.getElementById("aud-conv-count");
+    const audMsgCount = document.getElementById("aud-msg-count");
+    const audAvgLen = document.getElementById("aud-avg-len");
+    const piiEmailsLbl = document.getElementById("pii-emails-lbl");
+    const piiPhonesLbl = document.getElementById("pii-phones-lbl");
+    const piiPasswordsLbl = document.getElementById("pii-passwords-lbl");
+    const piiAddressesLbl = document.getElementById("pii-addresses-lbl");
+    const chartGmailBar = document.getElementById("chart-gmail-bar");
+    const chartWhatsappBar = document.getElementById("chart-whatsapp-bar");
+    const lblGmailCount = document.getElementById("lbl-gmail-count");
+    const lblWhatsappCount = document.getElementById("lbl-whatsapp-count");
+    const previewMessagesList = document.getElementById("preview-messages-list");
+
+    // Diff elements
+    const diffV1Select = document.getElementById("diff-v1-select");
+    const diffV2Select = document.getElementById("diff-v2-select");
+    const compareBtn = document.getElementById("compare-btn");
+    const diffReportContainer = document.getElementById("diff-report-container");
+    const diffMetricsTable = document.getElementById("diff-metrics-table").querySelector("tbody");
+    const diffPiiTable = document.getElementById("diff-pii-table").querySelector("tbody");
+
+    // Dynamic configuration variables
+    let availableVersions = [];
+
+    // Tab Switching Navigation
+    navItems.forEach(item => {
+        item.addEventListener("click", (e) => {
+            e.preventDefault();
+            const tabId = item.getAttribute("data-tab");
+            
+            navItems.forEach(n => n.classList.remove("active"));
+            tabPanels.forEach(p => p.classList.remove("active"));
+            
+            item.classList.add("active");
+            document.getElementById(tabId).classList.add("active");
+
+            // Update header headers
+            if (tabId === "pipeline-tab") {
+                pageTitle.innerText = "ETL Execution Hub";
+                pageDesc.innerText = "Run, trace, and monitor pipeline stages";
+            } else if (tabId === "auditor-tab") {
+                pageTitle.innerText = "Dataset Auditor";
+                pageDesc.innerText = "Evaluate and audit exported LLM training sets";
+                loadStatus(); // refresh dropdown versions
+            } else if (tabId === "diff-tab") {
+                pageTitle.innerText = "Version Comparison";
+                pageDesc.innerText = "Audit changes between dataset versions";
+                loadStatus(); // refresh dropdown versions
+            }
+        });
+    });
+
+    // Clear log console screen
+    clearConsoleBtn.addEventListener("click", () => {
+        consoleOutput.innerText = "Console cleared. Click 'Launch ETL Run' to start.";
+        resetStepNodes();
+    });
+
+    // Load initial system stats
+    async function loadStatus() {
+        try {
+            const res = await fetch("/api/status");
+            const data = await res.json();
+            
+            // Populate Config Badge and Status details
+            const version = data.config.dataset?.version || "1.0.0";
+            document.getElementById("config-version-lbl").innerText = `Config version: v${version}`;
+            document.getElementById("stat-active-version").innerText = `v${version}`;
+
+            // Set file counters
+            document.getElementById("stat-raw-files").innerText = 
+                `${data.counts.raw_gmail + data.counts.raw_whatsapp} files (${data.counts.raw_gmail} EML / ${data.counts.raw_whatsapp} TXT)`;
+            document.getElementById("stat-norm-files").innerText = 
+                `${data.counts.normalized_gmail + data.counts.normalized_whatsapp} files (${data.counts.normalized_gmail} EML / ${data.counts.normalized_whatsapp} TXT)`;
+
+            // Store versions list
+            availableVersions = data.versions || [];
+            populateVersionSelects();
+        } catch (err) {
+            console.error("Failed to load status details:", err);
+        }
+    }
+
+    // Populate drop down versions selectors
+    function populateVersionSelects() {
+        const prevAudValue = audVersionSelect.value;
+        const prevDiffV1 = diffV1Select.value;
+        const prevDiffV2 = diffV2Select.value;
+
+        // Clear existing options
+        audVersionSelect.innerHTML = "";
+        diffV1Select.innerHTML = "";
+        diffV2Select.innerHTML = "";
+
+        if (availableVersions.length === 0) {
+            const emptyOpt = '<option value="">No versions available</option>';
+            audVersionSelect.innerHTML = emptyOpt;
+            diffV1Select.innerHTML = emptyOpt;
+            diffV2Select.innerHTML = emptyOpt;
+            return;
+        }
+
+        availableVersions.forEach(v => {
+            const opt = `<option value="${v}">${v}</option>`;
+            audVersionSelect.innerHTML += opt;
+            diffV1Select.innerHTML += opt;
+            diffV2Select.innerHTML += opt;
+        });
+
+        // Restore values if still available
+        if (availableVersions.includes(prevAudValue)) audVersionSelect.value = prevAudValue;
+        if (availableVersions.includes(prevDiffV1)) diffV1Select.value = prevDiffV1;
+        if (availableVersions.includes(prevDiffV2)) diffV2Select.value = prevDiffV2;
+        
+        // Auto trigger auditor view
+        if (audVersionSelect.value) {
+            loadDatasetDetails(audVersionSelect.value);
+        }
+    }
+
+    // Trigger pipeline run
+    runBtn.addEventListener("click", async () => {
+        runBtn.disabled = true;
+        runBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+        consoleOutput.innerText = "Starting pipeline run...\n";
+        resetStepNodes();
+
+        try {
+            const res = await fetch("/api/run", { method: "POST" });
+            const data = await res.json();
+            
+            if (data.error) {
+                consoleOutput.innerText += `\nError: ${data.error}`;
+                highlightErrorInConsole();
+            } else {
+                // Stream log logs sequentially
+                const lines = data.logs.split("\n");
+                consoleOutput.innerText = "";
+                
+                let delay = 0;
+                lines.forEach((line) => {
+                    setTimeout(() => {
+                        // Apply colorful logging tags
+                        let coloredLine = line;
+                        if (line.includes("[INFO]")) {
+                            coloredLine = line.replace("[INFO]", '<span class="log-info">[INFO]</span>');
+                        } else if (line.includes("[WARNING]")) {
+                            coloredLine = line.replace("[WARNING]", '<span class="log-warn">[WARNING]</span>');
+                        } else if (line.includes("[ERROR]")) {
+                            coloredLine = line.replace("[ERROR]", '<span class="log-error">[ERROR]</span>');
+                        }
+                        
+                        consoleOutput.innerHTML += coloredLine + "\n";
+                        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                        
+                        // Dynamically trace visual steps nodes based on logs content
+                        parseLogForStepProgress(line);
+                    }, delay);
+                    delay += 80; // speed visual run
+                });
+                
+                setTimeout(() => {
+                    consoleOutput.innerHTML += '\n<span class="log-success">ETL Pipeline run successfully complete!</span>\n';
+                    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                    loadStatus(); // refresh datasets counters / versions
+                }, delay + 200);
+            }
+        } catch (err) {
+            consoleOutput.innerText += `\nNetwork failure: ${err}`;
+        } finally {
+            setTimeout(() => {
+                runBtn.disabled = false;
+                runBtn.innerHTML = '<i class="fa-solid fa-play"></i> Launch ETL Run';
+            }, 1000);
+        }
+    });
+
+    // Reset step indicator nodes
+    function resetStepNodes() {
+        const nodes = document.querySelectorAll(".step-node");
+        nodes.forEach(n => {
+            n.classList.remove("active", "completed");
+        });
+    }
+
+    // Step parser trace highlighting
+    function parseLogForStepProgress(logLine) {
+        // Map log patterns to node IDs
+        const mappings = [
+            { pattern: "Ingesting raw logs...", current: "step-ingest", prevs: [] },
+            { pattern: "Normalizing raw data...", current: "step-normalize", prevs: ["step-ingest"] },
+            { pattern: "Merging normalized messages...", current: "step-merge", prevs: ["step-ingest", "step-normalize"] },
+            { pattern: "Reconstructing threads", current: "step-reconstruct", prevs: ["step-ingest", "step-normalize", "step-merge"] },
+            { pattern: "Stripping signatures", current: "step-clean", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct"] },
+            { pattern: "Scrubbing PII", current: "step-anonymize", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean"] },
+            { pattern: "Exporting final instruction datasets", current: "step-export", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize"] },
+            { pattern: "Generating LLM-assisted advanced annotations", current: "step-annotate", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-export"] },
+            { pattern: "Creating semantic dialogue segments", current: "step-rag", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-export", "step-annotate"] },
+            { pattern: "completed successfully.", current: "", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-export", "step-annotate", "step-rag"] }
+        ];
+
+        mappings.forEach(m => {
+            if (logLine.includes(m.pattern)) {
+                resetStepNodes();
+                m.prevs.forEach(pId => {
+                    document.getElementById(pId).classList.add("completed");
+                });
+                if (m.current) {
+                    document.getElementById(m.current).classList.add("active");
+                }
+            }
+        });
+    }
+
+    // Auditor selector handler
+    audVersionSelect.addEventListener("change", () => {
+        if (audVersionSelect.value) {
+            loadDatasetDetails(audVersionSelect.value);
+        }
+    });
+
+    // Load dataset metadata details for Auditor
+    async function loadDatasetDetails(version) {
+        try {
+            const res = await fetch(`/api/dataset-details?version=${version}`);
+            const data = await res.json();
+            
+            if (data.error) {
+                console.error(data.error);
+                return;
+            }
+            
+            // Show grids
+            auditorMetricsGrid.style.display = "grid";
+            auditorVizContainer.style.display = "grid";
+            auditorPreviewContainer.style.display = "block";
+
+            // Card details
+            audConvCount.innerText = data.metadata.total_conversations || 0;
+            audMsgCount.innerText = data.metadata.total_messages || 0;
+            
+            const avgLen = data.statistics.conversation_length_stats?.average || 0;
+            audAvgLen.innerText = `${avgLen.toFixed(1)} turns`;
+
+            // PII
+            const pii = data.metadata.anonymization_summary || {};
+            piiEmailsLbl.innerText = pii.emails_scrubbed || 0;
+            piiPhonesLbl.innerText = pii.phones_scrubbed || 0;
+            piiPasswordsLbl.innerText = pii.passwords_scrubbed || 0;
+            piiAddressesLbl.innerText = pii.addresses_scrubbed || 0;
+
+            // Chart bar distribution math
+            const gmail = data.metadata.source_distribution?.gmail || 0;
+            const wa = data.metadata.source_distribution?.whatsapp || 0;
+            const total = gmail + wa;
+            const gmailPercent = total > 0 ? (gmail / total) * 100 : 50;
+            const waPercent = total > 0 ? (wa / total) * 100 : 50;
+            
+            chartGmailBar.style.width = `${gmailPercent}%`;
+            chartWhatsappBar.style.width = `${waPercent}%`;
+            lblGmailCount.innerText = gmail;
+            lblWhatsappCount.innerText = wa;
+
+            // JSONL message bubble list preview builder
+            previewMessagesList.innerHTML = "";
+            if (data.preview.length === 0) {
+                previewMessagesList.innerHTML = '<p class="text-secondary">No preview records available.</p>';
+            } else {
+                data.preview.forEach((row, i) => {
+                    const convCard = document.createElement("div");
+                    convCard.className = "preview-conv";
+                    
+                    const header = document.createElement("div");
+                    header.className = "preview-conv-header";
+                    
+                    const title = document.createElement("div");
+                    title.className = "preview-conv-title";
+                    title.innerText = `CONVERSATION RECORD #${i + 1} (${row.conversation_id || "Unknown ID"})`;
+                    header.appendChild(title);
+                    
+                    const excludeBtn = document.createElement("button");
+                    excludeBtn.className = "btn-exclude";
+                    excludeBtn.innerHTML = '<i class="fa-solid fa-trash"></i> Exclude';
+                    excludeBtn.addEventListener("click", () => {
+                        excludeConversation(version, row.conversation_id);
+                    });
+                    header.appendChild(excludeBtn);
+                    convCard.appendChild(header);
+                    
+                    row.messages.forEach(msg => {
+                        const msgDiv = document.createElement("div");
+                        msgDiv.className = "preview-msg";
+                        
+                        const roleSpan = document.createElement("span");
+                        roleSpan.className = `msg-role ${msg.role}`;
+                        roleSpan.innerText = `${msg.role}:`;
+                        
+                        const textSpan = document.createElement("span");
+                        textSpan.className = "msg-text";
+                        textSpan.innerText = msg.content;
+                        
+                        msgDiv.appendChild(roleSpan);
+                        msgDiv.appendChild(textSpan);
+                        convCard.appendChild(msgDiv);
+                    });
+                    previewMessagesList.appendChild(convCard);
+                });
+            }
+
+        } catch (err) {
+            console.error("Failed to load dataset details:", err);
+        }
+    }
+
+    async function excludeConversation(version, conversationId) {
+        if (!conversationId) {
+            alert("Cannot exclude: Conversation ID not found.");
+            return;
+        }
+        if (!confirm(`Are you sure you want to persistently exclude conversation ${conversationId}?`)) {
+            return;
+        }
+        
+        try {
+            const res = await fetch("/api/exclude-conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ version, conversation_id: conversationId })
+            });
+            const data = await res.json();
+            if (data.error) {
+                alert(`Error: ${data.error}`);
+            } else {
+                loadDatasetDetails(version);
+                loadStatus();
+            }
+        } catch (err) {
+            alert(`Failed to exclude conversation: ${err}`);
+        }
+    }
+
+    // Comparison diff handler
+    compareBtn.addEventListener("click", async () => {
+        const v1 = diffV1Select.value;
+        const v2 = diffV2Select.value;
+        
+        if (!v1 || !v2) {
+            alert("Please select two versions to compare.");
+            return;
+        }
+
+        try {
+            const res = await fetch("/api/diff", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ v1, v2 })
+            });
+            const data = await res.json();
+            
+            if (data.error) {
+                alert(`Comparison Error: ${data.error}`);
+                return;
+            }
+            
+            // Show table content
+            diffReportContainer.style.display = "block";
+            document.getElementById("th-v1").innerText = data.version1;
+            document.getElementById("th-v2").innerText = data.version2;
+            document.getElementById("th-pii-v1").innerText = data.version1;
+            document.getElementById("th-pii-v2").innerText = data.version2;
+
+            // Render Metrics Rows
+            diffMetricsTable.innerHTML = "";
+            renderDiffRow(diffMetricsTable, "Total Conversations", data.metrics.total_conversations);
+            renderDiffRow(diffMetricsTable, "Total Messages", data.metrics.total_messages);
+            renderDiffRow(diffMetricsTable, "Unique Vocabulary Size", data.metrics.vocabulary_size);
+            renderDiffRow(diffMetricsTable, "Estimated Total Tokens", data.metrics.estimated_total_tokens);
+
+            // Render PII Rows
+            diffPiiTable.innerHTML = "";
+            renderDiffRow(diffPiiTable, "Emails Redacted", data.anonymization.emails_scrubbed);
+            renderDiffRow(diffPiiTable, "Phones Redacted", data.anonymization.phones_scrubbed);
+            renderDiffRow(diffPiiTable, "Passwords Redacted", data.anonymization.passwords_scrubbed);
+            renderDiffRow(diffPiiTable, "Addresses Redacted", data.anonymization.addresses_scrubbed);
+
+        } catch (err) {
+            alert(`Comparison failed: ${err}`);
+        }
+    });
+
+    // Helper row builder inside tables comparison
+    function renderDiffRow(tableBody, label, metricsObj) {
+        const tr = document.createElement("tr");
+        
+        const tdLabel = document.createElement("td");
+        tdLabel.innerText = label;
+        tr.appendChild(tdLabel);
+        
+        const tdV1 = document.createElement("td");
+        tdV1.innerText = metricsObj.v1;
+        tr.appendChild(tdV1);
+        
+        const tdV2 = document.createElement("td");
+        tdV2.innerText = metricsObj.v2;
+        tr.appendChild(tdV2);
+        
+        const tdDelta = document.createElement("td");
+        const delta = metricsObj.delta;
+        
+        if (delta > 0) {
+            tdDelta.className = "delta-lbl plus";
+            tdDelta.innerText = `+${delta}`;
+        } else if (delta < 0) {
+            tdDelta.className = "delta-lbl minus";
+            tdDelta.innerText = `${delta}`;
+        } else {
+            tdDelta.className = "delta-lbl neutral";
+            tdDelta.innerText = "0";
+        }
+        
+        tr.appendChild(tdDelta);
+        tableBody.appendChild(tr);
+    }
+
+    // Trigger initial loading
+    loadStatus();
+});

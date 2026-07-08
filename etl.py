@@ -6,6 +6,7 @@ import yaml
 import logging
 import json
 from datetime import datetime, timezone
+from typing import Dict, Any
 from storage import RawStorage
 from connectors import GmailConnector, WhatsAppConnector
 from pipeline import (
@@ -76,8 +77,15 @@ def run_pipeline(config: dict, step: str = None):
     dirs = config.get("directories", {})
     raw_dir = os.path.join(project_root, dirs.get("raw_dir", "raw"))
     norm_dir = os.path.join(project_root, dirs.get("normalized_dir", "normalized"))
-    datasets_dir = os.path.join(project_root, dirs.get("datasets_dir", "datasets"))
     
+    # Version subfolder setup
+    version = config.get("dataset", {}).get("version")
+    base_datasets_dir = os.path.join(project_root, dirs.get("datasets_dir", "datasets"))
+    if version:
+        datasets_dir = os.path.join(base_datasets_dir, f"v{version}")
+    else:
+        datasets_dir = base_datasets_dir
+        
     # Step flags
     run_all = step is None
     
@@ -310,6 +318,120 @@ def load_dotenv(project_root: str):
                     val = val.strip().strip("'").strip('"')
                     os.environ[key] = val
 
+def diff_versions(project_root: str, v1: str, v2: str, output_format: str = "text") -> Dict[str, Any]:
+    v1_dir_name = v1 if v1.startswith("v") else f"v{v1}"
+    v2_dir_name = v2 if v2.startswith("v") else f"v{v2}"
+    
+    datasets_base = os.path.join(project_root, "datasets")
+    dir1 = os.path.join(datasets_base, v1_dir_name)
+    dir2 = os.path.join(datasets_base, v2_dir_name)
+    
+    if not os.path.exists(dir1):
+        raise FileNotFoundError(f"Version directory not found: {dir1}")
+    if not os.path.exists(dir2):
+        raise FileNotFoundError(f"Version directory not found: {dir2}")
+        
+    meta1_path = os.path.join(dir1, "metadata.json")
+    meta2_path = os.path.join(dir2, "metadata.json")
+    stats1_path = os.path.join(dir1, "statistics.json")
+    stats2_path = os.path.join(dir2, "statistics.json")
+    
+    def load_json(path):
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                try:
+                    return json.load(f)
+                except Exception:
+                    pass
+        return {}
+        
+    meta1 = load_json(meta1_path)
+    meta2 = load_json(meta2_path)
+    stats1 = load_json(stats1_path)
+    stats2 = load_json(stats2_path)
+    
+    diff_report = {
+        "version1": v1_dir_name,
+        "version2": v2_dir_name,
+        "timestamp1": meta1.get("timestamp"),
+        "timestamp2": meta2.get("timestamp"),
+        "metrics": {
+            "total_conversations": {
+                "v1": meta1.get("total_conversations", 0),
+                "v2": meta2.get("total_conversations", 0),
+                "delta": meta2.get("total_conversations", 0) - meta1.get("total_conversations", 0)
+            },
+            "total_messages": {
+                "v1": meta1.get("total_messages", 0),
+                "v2": meta2.get("total_messages", 0),
+                "delta": meta2.get("total_messages", 0) - meta1.get("total_messages", 0)
+            },
+            "vocabulary_size": {
+                "v1": stats1.get("vocabulary_size", 0),
+                "v2": stats2.get("vocabulary_size", 0),
+                "delta": stats2.get("vocabulary_size", 0) - stats1.get("vocabulary_size", 0)
+            },
+            "estimated_total_tokens": {
+                "v1": stats1.get("estimated_total_tokens", 0),
+                "v2": stats2.get("estimated_total_tokens", 0),
+                "delta": stats2.get("estimated_total_tokens", 0) - stats1.get("estimated_total_tokens", 0)
+            }
+        },
+        "anonymization": {
+            "emails_scrubbed": {
+                "v1": meta1.get("anonymization_summary", {}).get("emails_scrubbed", 0),
+                "v2": meta2.get("anonymization_summary", {}).get("emails_scrubbed", 0),
+                "delta": meta2.get("anonymization_summary", {}).get("emails_scrubbed", 0) - meta1.get("anonymization_summary", {}).get("emails_scrubbed", 0)
+            },
+            "phones_scrubbed": {
+                "v1": meta1.get("anonymization_summary", {}).get("phones_scrubbed", 0),
+                "v2": meta2.get("anonymization_summary", {}).get("phones_scrubbed", 0),
+                "delta": meta2.get("anonymization_summary", {}).get("phones_scrubbed", 0) - meta1.get("anonymization_summary", {}).get("phones_scrubbed", 0)
+            },
+            "passwords_scrubbed": {
+                "v1": meta1.get("anonymization_summary", {}).get("passwords_scrubbed", 0),
+                "v2": meta2.get("anonymization_summary", {}).get("passwords_scrubbed", 0),
+                "delta": meta2.get("anonymization_summary", {}).get("passwords_scrubbed", 0) - meta1.get("anonymization_summary", {}).get("passwords_scrubbed", 0)
+            },
+            "addresses_scrubbed": {
+                "v1": meta1.get("anonymization_summary", {}).get("addresses_scrubbed", 0),
+                "v2": meta2.get("anonymization_summary", {}).get("addresses_scrubbed", 0),
+                "delta": meta2.get("anonymization_summary", {}).get("addresses_scrubbed", 0) - meta1.get("anonymization_summary", {}).get("addresses_scrubbed", 0)
+            }
+        }
+    }
+    
+    if output_format == "text":
+        lines = []
+        lines.append(f"# Dataset Comparison Report: {v1_dir_name} vs {v2_dir_name}")
+        lines.append("")
+        lines.append(f"| Metric | {v1_dir_name} | {v2_dir_name} | Delta |")
+        lines.append("| --- | --- | --- | --- |")
+        
+        def add_row(name, data):
+            d_val = data["delta"]
+            delta_str = f"+{d_val}" if d_val > 0 else str(d_val)
+            lines.append(f"| {name} | {data['v1']} | {data['v2']} | {delta_str} |")
+            
+        add_row("Total Conversations", diff_report["metrics"]["total_conversations"])
+        add_row("Total Messages", diff_report["metrics"]["total_messages"])
+        add_row("Unique Vocabulary Size", diff_report["metrics"]["vocabulary_size"])
+        add_row("Estimated Total Tokens", diff_report["metrics"]["estimated_total_tokens"])
+        
+        lines.append("")
+        lines.append("### PII Redaction Audit Comparison")
+        lines.append("")
+        lines.append(f"| PII Entity Category | {v1_dir_name} | {v2_dir_name} | Delta |")
+        lines.append("| --- | --- | --- | --- |")
+        add_row("Emails Scrubbed", diff_report["anonymization"]["emails_scrubbed"])
+        add_row("Phones Scrubbed", diff_report["anonymization"]["phones_scrubbed"])
+        add_row("Passwords/PINs Scrubbed", diff_report["anonymization"]["passwords_scrubbed"])
+        add_row("Addresses Scrubbed", diff_report["anonymization"]["addresses_scrubbed"])
+        
+        print("\n".join(lines))
+        
+    return diff_report
+
 def main():
     project_root = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(project_root)
@@ -337,6 +459,17 @@ def main():
         help="Enable verbose DEBUG logging"
     )
     
+    # 'diff' command
+    diff_parser = subparsers.add_parser("diff", help="Compare two dataset versions")
+    diff_parser.add_argument("--v1", required=True, help="First version (e.g. 1.0.0)")
+    diff_parser.add_argument("--v2", required=True, help="Second version (e.g. 1.1.0)")
+    diff_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output comparison report format"
+    )
+    
     args = parser.parse_args()
     
     if args.command == "run":
@@ -359,6 +492,15 @@ def main():
             run_pipeline(config, args.step)
         except Exception as e:
             logging.getLogger("etl_pipeline").exception("Pipeline failed with exception:")
+            sys.exit(1)
+            
+    elif args.command == "diff":
+        try:
+            diff_report = diff_versions(project_root, args.v1, args.v2, args.format)
+            if args.format == "json":
+                print(json.dumps(diff_report, indent=2))
+        except Exception as e:
+            print(f"Error comparing versions: {e}", file=sys.stderr)
             sys.exit(1)
 
 if __name__ == "__main__":

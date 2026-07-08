@@ -32,12 +32,24 @@ class DatasetGenerator:
         conversations = []
         if not os.path.exists(self.input_dir):
             return conversations
+            
+        exclusions = []
+        if os.path.exists("exclusions.json"):
+            try:
+                with open("exclusions.json", 'r', encoding='utf-8') as f:
+                    exclusions = json.load(f)
+            except Exception:
+                pass
+
         for filename in sorted(os.listdir(self.input_dir)):
             if filename.endswith(".json"):
                 path = os.path.join(self.input_dir, filename)
                 try:
                     with open(path, 'r', encoding='utf-8') as f:
                         data = json.load(f)
+                        conv_id = data.get("conversation_id")
+                        if conv_id and conv_id in exclusions:
+                            continue
                         conversations.append(data)
                 except Exception as e:
                     # Ignore corrupted or invalid JSON files
@@ -53,6 +65,7 @@ class DatasetGenerator:
         
         with open(output_path, 'w', encoding='utf-8') as f:
             for conv in conversations:
+                conv_id = conv.get("conversation_id", "unknown")
                 messages = conv.get("messages", [])
                 if not messages:
                     continue
@@ -74,7 +87,10 @@ class DatasetGenerator:
                         "content": msg.get("text", "")
                     })
                     
-                payload = {"messages": formatted_messages}
+                payload = {
+                    "conversation_id": conv_id,
+                    "messages": formatted_messages
+                }
                 f.write(json.dumps(payload, ensure_ascii=False) + "\n")
                 
         return output_path

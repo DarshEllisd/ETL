@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation ETL Pipeline Dashboard</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-gears logo-icon"></i>
+                <h2>ETL Control</h2>
+            </div>
+            <nav class="nav-links">
+                <a href="#" class="nav-item active" data-tab="pipeline-tab">
+                    <i class="fa-solid fa-play"></i>
+                    <span>Pipeline Run</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="auditor-tab" id="auditor-nav-btn">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>Dataset Auditor</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="diff-tab" id="diff-nav-btn">
+                    <i class="fa-solid fa-code-compare"></i>
+                    <span>Version Comparison</span>
+                </a>
+            </nav>
+            <div class="status-indicator-panel">
+                <div class="status-label">SYSTEM HEALTH</div>
+                <div class="status-indicator">
+                    <span class="pulse-dot green"></span>
+                    <span class="status-text">Online (Local)</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Panel Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-title">
+                    <h1 id="page-title">ETL Execution Hub</h1>
+                    <p id="page-desc">Run, trace, and monitor pipeline stages</p>
+                </div>
+                <div class="header-actions">
+                    <div class="config-badge">
+                        <i class="fa-solid fa-file-code"></i>
+                        <span id="config-version-lbl">v1.0.0</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- TAB 1: PIPELINE RUN -->
+            <section id="pipeline-tab" class="tab-panel active">
+                <div class="grid-stats">
+                    <div class="stat-card">
+                        <div class="stat-icon purple"><i class="fa-solid fa-database"></i></div>
+                        <div class="stat-details">
+                            <h3>Raw Source Logs</h3>
+                            <p id="stat-raw-files">0 files (0 EML / 0 TXT)</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-solid fa-file-shield"></i></div>
+                        <div class="stat-details">
+                            <h3>Normalized Records</h3>
+                            <p id="stat-norm-files">0 files (0 EML / 0 TXT)</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-solid fa-code"></i></div>
+                        <div class="stat-details">
+                            <h3>Active Version</h3>
+                            <p id="stat-active-version">v1.0.0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Run Action Panel -->
+                <div class="action-panel">
+                    <div class="run-control-header">
+                        <h2>Pipeline Execution Progress</h2>
+                        <button id="run-pipeline-btn" class="btn primary-btn">
+                            <i class="fa-solid fa-play"></i> Launch ETL Run
+                        </button>
+                    </div>
+
+                    <!-- Pipeline Steps Progress Vis -->
+                    <div class="pipeline-progress-container">
+                        <div class="pipeline-line"></div>
+                        <div class="pipeline-steps">
+                            <div class="step-node" id="step-ingest">
+                                <div class="step-circle">1</div>
+                                <div class="step-label">Ingest</div>
+                            </div>
+                            <div class="step-node" id="step-normalize">
+                                <div class="step-circle">2</div>
+                                <div class="step-label">Normalize</div>
+                            </div>
+                            <div class="step-node" id="step-merge">
+                                <div class="step-circle">3</div>
+                                <div class="step-label">Merge</div>
+                            </div>
+                            <div class="step-node" id="step-reconstruct">
+                                <div class="step-circle">4</div>
+                                <div class="step-label">Thread</div>
+                            </div>
+                            <div class="step-node" id="step-clean">
+                                <div class="step-circle">5</div>
+                                <div class="step-label">Clean</div>
+                            </div>
+                            <div class="step-node" id="step-anonymize">
+                                <div class="step-circle">6</div>
+                                <div class="step-label">Scrub PII</div>
+                            </div>
+                            <div class="step-node" id="step-export">
+                                <div class="step-circle">7</div>
+                                <div class="step-label">Export</div>
+                            </div>
+                            <div class="step-node" id="step-annotate">
+                                <div class="step-circle">8</div>
+                                <div class="step-label">Annotate</div>
+                            </div>
+                            <div class="step-node" id="step-rag">
+                                <div class="step-circle">9</div>
+                                <div class="step-label">RAG</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Log Stream Console Terminal -->
+                <div class="console-panel">
+                    <div class="console-header">
+                        <div class="console-buttons">
+                            <span class="c-btn red"></span>
+                            <span class="c-btn yellow"></span>
+                            <span class="c-btn green"></span>
+                        </div>
+                        <div class="console-title">Live Log Console output</div>
+                        <button id="clear-console-btn" class="console-action-btn"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                    <pre class="console-body" id="console-output">Console ready. Click 'Launch ETL Run' to start the pipeline.</pre>
+                </div>
+            </section>
+
+            <!-- TAB 2: DATASET AUDITOR -->
+            <section id="auditor-tab" class="tab-panel">
+                <div class="version-select-row">
+                    <label for="auditor-version-select">Select Version:</label>
+                    <select id="auditor-version-select" class="styled-select">
+                        <option value="">No versions available</option>
+                    </select>
+                </div>
+
+                <!-- Stats Summary Cards -->
+                <div class="grid-stats" id="auditor-metrics-grid" style="display: none;">
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fa-solid fa-comments"></i></div>
+                        <div class="stat-details">
+                            <h3>Conversations</h3>
+                            <h2 id="aud-conv-count">0</h2>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><i class="fa-solid fa-message"></i></div>
+                        <div class="stat-details">
+                            <h3>Messages</h3>
+                            <h2 id="aud-msg-count">0</h2>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon purple"><i class="fa-solid fa-list-ol"></i></div>
+                        <div class="stat-details">
+                            <h3>Average Length</h3>
+                            <h2 id="aud-avg-len">0 turns</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Split panels for graphs / details -->
+                <div class="graphs-container" id="auditor-viz-container" style="display: none;">
+                    <!-- Source distribution -->
+                    <div class="graph-card">
+                        <h2>Source Distribution</h2>
+                        <div class="horizontal-bar-chart">
+                            <div class="bar-labels">
+                                <div>Gmail (<span id="lbl-gmail-count">0</span>)</div>
+                                <div>WhatsApp (<span id="lbl-whatsapp-count">0</span>)</div>
+                            </div>
+                            <div class="bar-track">
+                                <div class="bar-fill gmail-fill" id="chart-gmail-bar" style="width: 50%;"></div>
+                                <div class="bar-fill whatsapp-fill" id="chart-whatsapp-bar" style="width: 50%;"></div>
+                            </div>
+                        </div>
+                        <div class="speaker-legend">
+                            <span class="legend-item"><span class="color-dot gmail"></span> Gmail</span>
+                            <span class="legend-item"><span class="color-dot whatsapp"></span> WhatsApp</span>
+                        </div>
+                    </div>
+
+                    <!-- PII anonymization statistics -->
+                    <div class="graph-card">
+                        <h2>PII Redacted Summary</h2>
+                        <div class="pii-stats-grid">
+                            <div class="pii-pill">
+                                <span class="pii-name">Emails</span>
+                                <span class="pii-val" id="pii-emails-lbl">0</span>
+                            </div>
+                            <div class="pii-pill">
+                                <span class="pii-name">Phones</span>
+                                <span class="pii-val" id="pii-phones-lbl">0</span>
+                            </div>
+                            <div class="pii-pill">
+                                <span class="pii-name">Passwords</span>
+                                <span class="pii-val" id="pii-passwords-lbl">0</span>
+                            </div>
+                            <div class="pii-pill">
+                                <span class="pii-name">Addresses</span>
+                                <span class="pii-val" id="pii-addresses-lbl">0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Preview Grid Conversations -->
+                <div class="preview-panel" id="auditor-preview-container" style="display: none;">
+                    <h2>Instruction Dataset Preview (`conversations.jsonl`)</h2>
+                    <div class="preview-scroller" id="preview-messages-list">
+                        <!-- Messages render dynamically here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: VERSION COMPARISON -->
+            <section id="diff-tab" class="tab-panel">
+                <div class="diff-control-row">
+                    <div class="select-col">
+                        <label for="diff-v1-select">Version 1 (Base):</label>
+                        <select id="diff-v1-select" class="styled-select"></select>
+                    </div>
+                    <div class="select-col">
+                        <label for="diff-v2-select">Version 2 (Target):</label>
+                        <select id="diff-v2-select" class="styled-select"></select>
+                    </div>
+                    <button id="compare-btn" class="btn primary-btn"><i class="fa-solid fa-code-compare"></i> Compare</button>
+                </div>
+
+                <!-- Diff report visual elements -->
+                <div id="diff-report-container" class="diff-report-wrapper" style="display: none;">
+                    <h2>Dataset Metrics Comparison</h2>
+                    <table class="styled-table" id="diff-metrics-table">
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th id="th-v1">Version 1</th>
+                                <th id="th-v2">Version 2</th>
+                                <th>Delta</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Compare rows render dynamically -->
+                        </tbody>
+                    </table>
+
+                    <h2 class="section-title">PII Scrubbing Comparison</h2>
+                    <table class="styled-table" id="diff-pii-table">
+                        <thead>
+                            <tr>
+                                <th>PII Entity</th>
+                                <th id="th-pii-v1">Version 1</th>
+                                <th id="th-pii-v2">Version 2</th>
+                                <th>Delta</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Compare PII rows render dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
