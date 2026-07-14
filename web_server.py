@@ -8,6 +8,40 @@ import socketserver
 import urllib.parse
 from etl import run_pipeline, diff_versions, setup_logging
 
+def are_annotations_missing(project_root, version, approved_ids):
+    version_dir = os.path.join(project_root, "datasets", version)
+    intent_path = os.path.join(version_dir, "intent_labels.jsonl")
+    sentiment_path = os.path.join(version_dir, "sentiment_labels.jsonl")
+    summary_path = os.path.join(version_dir, "summaries.jsonl")
+    languages_path = os.path.join(version_dir, "languages.jsonl")
+
+    # If any file is missing, we are missing annotations
+    for path in [intent_path, sentiment_path, summary_path, languages_path]:
+        if not os.path.exists(path):
+            return True
+
+    # Check if all approved_ids are covered
+    def get_annotated_cids(path):
+        cids = set()
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        item = json.loads(line)
+                        cid = item.get("conversation_id")
+                        if cid:
+                            cids.add(cid)
+        except Exception:
+            pass
+        return cids
+
+    for path in [intent_path, sentiment_path, summary_path, languages_path]:
+        cids = get_annotated_cids(path)
+        if not cids.issuperset(approved_ids):
+            return True
+
+    return False
+
 class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         # Serve static files from the 'web' folder
@@ -48,6 +82,8 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_api_approve_all_conversations()
         elif parsed_url.path == "/api/save-roles":
             self.handle_api_save_roles()
+        elif parsed_url.path == "/api/approve-language":
+            self.handle_api_approve_language()
         elif parsed_url.path == "/api/clean-slate":
             self.handle_api_clean_slate()
         else:
@@ -139,7 +175,57 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                         preview_rows.append(json.loads(line))
                     except Exception:
                         pass
-                        
+
+        # Load allowed languages whitelist
+        allowed_langs_path = os.path.join(project_root, "allowed_languages.json")
+        default_langs = ["en - English", "hi - Hindi", "ta - Tamil"]
+        if not os.path.exists(allowed_langs_path):
+            try:
+                with open(allowed_langs_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_langs, f, indent=2)
+            except Exception:
+                pass
+        allowed_langs = default_langs
+        if os.path.exists(allowed_langs_path):
+            try:
+                with open(allowed_langs_path, 'r', encoding='utf-8') as f:
+                    allowed_langs = json.load(f)
+            except Exception:
+                pass
+
+        # Load languages annotations
+        languages_path = os.path.join(version_dir, "languages.jsonl")
+        conv_to_langs = {}
+        conv_msg_langs = {}
+        all_seen_languages = set(default_langs)
+        if os.path.exists(languages_path):
+            try:
+                with open(languages_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip():
+                            item = json.loads(line)
+                            cid = item.get("conversation_id")
+                            if cid:
+                                raw_langs = item.get("detected_languages", [])
+                                conv_langs_set = set()
+                                msg_langs = {}
+                                for entry in raw_langs:
+                                    if isinstance(entry, dict):
+                                        mid = entry.get("message_id")
+                                        mlangs = entry.get("languages", [])
+                                        if mid:
+                                            msg_langs[mid] = mlangs
+                                        for l in mlangs:
+                                            conv_langs_set.add(l)
+                                            all_seen_languages.add(l)
+                                    else:
+                                        conv_langs_set.add(str(entry))
+                                        all_seen_languages.add(str(entry))
+                                conv_to_langs[cid] = sorted(list(conv_langs_set))
+                                conv_msg_langs[cid] = msg_langs
+            except Exception:
+                pass
+
         # Load pending review conversations (in normalized/anonymized/ but not in approved.json)
         approved = []
         approved_path = os.path.join(project_root, "approved.json")
@@ -151,7 +237,9 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 pass
                 
         pending_rows = []
+        approved_rows = []
         anonymized_dir = os.path.join(project_root, "normalized", "anonymized")
+        
         if os.path.exists(anonymized_dir):
             for filename in sorted(os.listdir(anonymized_dir)):
                 if filename.endswith(".json"):
@@ -160,20 +248,41 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                         with open(path, 'r', encoding='utf-8') as f:
                             data = json.load(f)
                             conv_id = data.get("conversation_id")
-                            if conv_id and conv_id not in approved:
-                                messages = []
-                                for m in data.get("messages", [])[:5]:
-                                    role = m.get("speaker", "user")
-                                    if role not in ["user", "assistant", "system"]:
-                                        role = "user"
-                                    messages.append({
-                                        "role": role,
-                                        "content": m.get("text", "")
-                                    })
-                                pending_rows.append({
-                                    "conversation_id": conv_id,
-                                    "messages": messages
+                            if not conv_id:
+                                continue
+                                
+                            messages = []
+                            cid_msg_langs = conv_msg_langs.get(conv_id, {})
+                            for m in data.get("messages", []):
+                                role = m.get("speaker", "user")
+                                if role not in ["user", "assistant", "system"]:
+                                    role = "user"
+                                mid = m.get("message_id", "")
+                                messages.append({
+                                    "role": role,
+                                    "content": m.get("text", ""),
+                                    "message_id": mid,
+                                    "detected_languages": cid_msg_langs.get(mid, ["en - English"])
                                 })
+                                
+                            langs = conv_to_langs.get(conv_id, ["en - English"])
+                            unapproved_langs = [l for l in langs if l not in allowed_langs]
+                            is_flagged = len(unapproved_langs) > 0
+                            
+                            row_item = {
+                                "conversation_id": conv_id,
+                                "messages": messages,
+                                "detected_languages": langs,
+                                "flagged": is_flagged,
+                                "flagged_languages": unapproved_langs
+                            }
+                            
+                            if conv_id in approved and not is_flagged:
+                                approved_rows.append(row_item)
+                            else:
+                                # For pending inbox, limit message preview count to 5 for frontend performance
+                                row_item["messages"] = messages[:5]
+                                pending_rows.append(row_item)
                     except Exception:
                         pass
 
@@ -228,9 +337,12 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             "metadata": meta,
             "statistics": stats,
             "preview": preview_rows,
+            "approved_conversations": approved_rows,
             "pending": pending_rows,
             "participants": participants,
-            "agents": agents
+            "agents": agents,
+            "allowed_languages": allowed_langs,
+            "all_seen_languages": sorted(list(all_seen_languages))
         })
 
     def handle_api_run(self):
@@ -328,12 +440,13 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             config["dataset"]["version"] = version_str
             
             setup_logging(config.get("logging", {}), verbose=False)
-            run_pipeline(config, "export")
             
             annotator_conf = config.get("annotation", {})
             if annotator_conf.get("enabled", True):
                 run_pipeline(config, "annotate")
                 
+            run_pipeline(config, "export")
+            
             rag_conf = config.get("rag", {})
             if rag_conf.get("enabled", True):
                 run_pipeline(config, "rag")
@@ -397,12 +510,17 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             config["dataset"]["version"] = version_str
             
             setup_logging(config.get("logging", {}), verbose=False)
-            run_pipeline(config, "export")
             
             annotator_conf = config.get("annotation", {})
             if annotator_conf.get("enabled", True):
-                run_pipeline(config, "annotate")
+                version_dir_name = f"v{version_str}"
+                if are_annotations_missing(project_root, version_dir_name, approved):
+                    run_pipeline(config, "annotate")
+                else:
+                    print("All approved conversations are already annotated. Skipping annotation pipeline stage.")
                 
+            run_pipeline(config, "export")
+            
             rag_conf = config.get("rag", {})
             if rag_conf.get("enabled", True):
                 run_pipeline(config, "rag")
@@ -481,12 +599,17 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             config["dataset"]["version"] = version_str
             
             setup_logging(config.get("logging", {}), verbose=False)
-            run_pipeline(config, "export")
             
             annotator_conf = config.get("annotation", {})
             if annotator_conf.get("enabled", True):
-                run_pipeline(config, "annotate")
+                version_dir_name = f"v{version_str}"
+                if are_annotations_missing(project_root, version_dir_name, approved):
+                    run_pipeline(config, "annotate")
+                else:
+                    print("All approved conversations are already annotated. Skipping annotation pipeline stage.")
                 
+            run_pipeline(config, "export")
+            
             rag_conf = config.get("rag", {})
             if rag_conf.get("enabled", True):
                 run_pipeline(config, "rag")
@@ -662,7 +785,15 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
                 
-            # 6. Remove report files
+            # 6. Remove allowed_languages.json
+            allowed_langs_path = os.path.join(project_root, "allowed_languages.json")
+            if os.path.exists(allowed_langs_path):
+                try:
+                    os.remove(allowed_langs_path)
+                except Exception:
+                    pass
+
+            # 7. Remove report files
             for report in ["validation_report.json", "privacy_report.json"]:
                 p = os.path.join(project_root, report)
                 if os.path.exists(p):
@@ -675,10 +806,109 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             self.send_json_response(500, {"error": f"Failed to clean slate: {str(e)}"})
 
+    def handle_api_approve_language(self):
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        
+        try:
+            data = json.loads(post_data)
+            version = data.get("version")
+            language = data.get("language")
+            
+            replace_with = data.get("replace_with")
+            
+            if not version or not language:
+                self.send_json_response(400, {"error": "Missing parameters 'version' or 'language'"})
+                return
+                
+            version_str = version[1:] if version.startswith("v") else version
+            version_dir = os.path.join(project_root, "datasets", f"v{version_str}")
+            
+            # If replace_with is specified, update languages.jsonl mapping
+            if replace_with:
+                languages_path = os.path.join(version_dir, "languages.jsonl")
+                if os.path.exists(languages_path):
+                    try:
+                        updated_lines = []
+                        with open(languages_path, 'r', encoding='utf-8') as f:
+                            for line in f:
+                                if line.strip():
+                                    item = json.loads(line)
+                                    raw_langs = item.get("detected_languages", [])
+                                    new_langs = []
+                                    for entry in raw_langs:
+                                        if isinstance(entry, dict):
+                                            mlangs = entry.get("languages", [])
+                                            updated_mlangs = [replace_with if l == language else l for l in mlangs]
+                                            entry["languages"] = updated_mlangs
+                                            new_langs.append(entry)
+                                        else:
+                                            new_langs.append(replace_with if str(entry) == language else str(entry))
+                                    item["detected_languages"] = new_langs
+                                    updated_lines.append(json.dumps(item, ensure_ascii=False) + "\n")
+                        with open(languages_path, 'w', encoding='utf-8') as f:
+                            f.writelines(updated_lines)
+                    except Exception as e:
+                        print(f"Failed to update languages mapping: {e}")
+                
+                # Now the new language is what we want to authorize
+                target_auth = replace_with
+            else:
+                target_auth = language
+
+            allowed_langs_path = os.path.join(project_root, "allowed_languages.json")
+            default_langs = ["en - English", "hi - Hindi", "ta - Tamil"]
+            allowed = default_langs
+            
+            if os.path.exists(allowed_langs_path):
+                try:
+                    with open(allowed_langs_path, 'r', encoding='utf-8') as f:
+                        allowed = json.load(f)
+                except Exception:
+                    pass
+            
+            if target_auth not in allowed:
+                allowed.append(target_auth)
+                with open(allowed_langs_path, 'w', encoding='utf-8') as f:
+                    json.dump(allowed, f, indent=2)
+                    
+            config_path = os.path.join(project_root, "configs", "config.yaml")
+            if not os.path.exists(config_path):
+                self.send_json_response(400, {"error": "Config file configs/config.yaml not found"})
+                return
+                
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+            
+            config["dataset"] = config.get("dataset", {})
+            config["dataset"]["version"] = version_str
+            
+            # Rebuild dataset exports and RAG in a background thread to prevent HTTP timeouts
+            import threading
+            def run_background_pipeline(cfg):
+                try:
+                    setup_logging(cfg.get("logging", {}), verbose=False)
+                    run_pipeline(cfg, "export")
+                    rag_conf = cfg.get("rag", {})
+                    if rag_conf.get("enabled", True):
+                        run_pipeline(cfg, "rag")
+                except Exception as ex:
+                    print(f"Background pipeline rebuild failed: {ex}")
+
+            threading.Thread(target=run_background_pipeline, args=(config,), daemon=True).start()
+            
+            self.send_json_response(200, {"status": "success"})
+        except Exception as e:
+            self.send_json_response(500, {"error": f"Failed to approve language: {str(e)}"})
+
     def send_json_response(self, status, data):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode('utf-8'))
 

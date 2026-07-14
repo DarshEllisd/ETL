@@ -11,6 +11,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const consoleOutput = document.getElementById("console-output");
     const clearConsoleBtn = document.getElementById("clear-console-btn");
     
+    function showConsole(msg) {
+        if (consoleOutput) {
+            consoleOutput.innerText += `\n${msg}`;
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+    }
+    
     // Auditor elements
     const audVersionSelect = document.getElementById("auditor-version-select");
     const auditorMetricsGrid = document.getElementById("auditor-metrics-grid");
@@ -38,6 +45,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const rolesListContainer = document.getElementById("roles-list-container");
     const saveRolesBtn = document.getElementById("save-roles-btn");
 
+    // Language Explorer elements
+    const auditorExplorerLayout = document.getElementById("auditor-explorer-layout");
+    const languagesList = document.getElementById("languages-list");
+    const auditorFlaggedContainer = document.getElementById("auditor-flagged-container");
+    const flaggedCountLbl = document.getElementById("flagged-count-lbl");
+    const flaggedMessagesList = document.getElementById("flagged-messages-list");
+    const browserTitleLbl = document.getElementById("browser-title-lbl");
+
+    // Dynamic configuration variables
+    let availableVersions = [];
+    let activeLanguage = "All";
+    let lastFetchedDetails = null;
+
     // Diff elements
     const diffV1Select = document.getElementById("diff-v1-select");
     const diffV2Select = document.getElementById("diff-v2-select");
@@ -45,9 +65,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const diffReportContainer = document.getElementById("diff-report-container");
     const diffMetricsTable = document.getElementById("diff-metrics-table").querySelector("tbody");
     const diffPiiTable = document.getElementById("diff-pii-table").querySelector("tbody");
-
-    // Dynamic configuration variables
-    let availableVersions = [];
 
     // Tab Switching Navigation
     navItems.forEach(item => {
@@ -86,7 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Load initial system stats
     async function loadStatus() {
         try {
-            const res = await fetch("/api/status");
+            const res = await fetch(`/api/status?_t=${Date.now()}`);
             const data = await res.json();
             
             // Populate Config Badge and Status details
@@ -249,8 +266,48 @@ document.addEventListener("DOMContentLoaded", () => {
     // Load dataset metadata details for Auditor
     async function loadDatasetDetails(version) {
         try {
-            const res = await fetch(`/api/dataset-details?version=${version}`);
+            const res = await fetch(`/api/dataset-details?version=${version}&_t=${Date.now()}`);
             const data = await res.json();
+            
+            function appendMessageRow(container, msg) {
+                const msgDiv = document.createElement("div");
+                msgDiv.className = "preview-msg";
+                msgDiv.style.display = "flex";
+                msgDiv.style.alignItems = "baseline";
+                msgDiv.style.justifyContent = "space-between";
+                msgDiv.style.gap = "12px";
+                
+                const leftSpan = document.createElement("div");
+                leftSpan.style.display = "flex";
+                leftSpan.style.alignItems = "baseline";
+                leftSpan.style.gap = "8px";
+                
+                const roleSpan = document.createElement("span");
+                roleSpan.className = `msg-role ${msg.role}`;
+                roleSpan.innerText = `${msg.role}:`;
+                
+                const textSpan = document.createElement("span");
+                textSpan.className = "msg-text";
+                textSpan.innerText = msg.content;
+                
+                leftSpan.appendChild(roleSpan);
+                leftSpan.appendChild(textSpan);
+                msgDiv.appendChild(leftSpan);
+                
+                if (msg.detected_languages && msg.detected_languages.length > 0) {
+                    const langTag = document.createElement("span");
+                    langTag.style.fontSize = "10px";
+                    langTag.style.background = "rgba(255, 255, 255, 0.03)";
+                    langTag.style.border = "1px solid rgba(255, 255, 255, 0.05)";
+                    langTag.style.padding = "1px 6px";
+                    langTag.style.borderRadius = "10px";
+                    langTag.style.color = "var(--text-secondary)";
+                    langTag.style.flexShrink = "0";
+                    langTag.innerText = msg.detected_languages.join(", ");
+                    msgDiv.appendChild(langTag);
+                }
+                container.appendChild(msgDiv);
+            }
             
             if (data.error) {
                 console.error(data.error);
@@ -293,22 +350,83 @@ document.addEventListener("DOMContentLoaded", () => {
             lblGmailCount.innerText = gmail;
             lblWhatsappCount.innerText = wa;
 
-            // JSONL message bubble list preview builder
-            previewMessagesList.innerHTML = "";
-            if (data.preview.length === 0) {
-                previewMessagesList.innerHTML = '<p class="text-secondary">No preview records available.</p>';
-            } else {
-                data.preview.forEach((row, i) => {
+            lastFetchedDetails = data;
+            
+            // Show new explorer layout
+            auditorExplorerLayout.style.display = "flex";
+
+            // 1. Render Language Explorer sidebar list
+            languagesList.innerHTML = "";
+            const langCounts = { "All": data.approved_conversations.length };
+            data.all_seen_languages.forEach(l => {
+                langCounts[l] = data.approved_conversations.filter(c => c.detected_languages.includes(l)).length;
+            });
+
+            // Add 'All' item
+            const allLi = document.createElement("li");
+            allLi.className = `lang-item ${activeLanguage === "All" ? "active" : ""}`;
+            allLi.innerHTML = `<span>All Languages</span> <span class="lang-badge">${langCounts["All"]}</span>`;
+            allLi.addEventListener("click", () => {
+                activeLanguage = "All";
+                renderApprovedBrowser();
+                document.querySelectorAll(".lang-item").forEach(li => li.classList.remove("active"));
+                allLi.classList.add("active");
+            });
+            languagesList.appendChild(allLi);
+
+            // Add individual languages
+            data.all_seen_languages.forEach(lang => {
+                const li = document.createElement("li");
+                li.className = `lang-item ${activeLanguage === lang ? "active" : ""}`;
+                li.innerHTML = `<span>${lang}</span> <span class="lang-badge">${langCounts[lang]}</span>`;
+                li.addEventListener("click", () => {
+                    activeLanguage = lang;
+                    renderApprovedBrowser();
+                    document.querySelectorAll(".lang-item").forEach(item => item.classList.remove("active"));
+                    li.classList.add("active");
+                });
+                languagesList.appendChild(li);
+            });
+
+            // Helper to render approved browser grid
+            function renderApprovedBrowser() {
+                previewMessagesList.innerHTML = "";
+                browserTitleLbl.innerText = `Database Explorer: Approved Conversations (${activeLanguage})`;
+                
+                let filtered = data.approved_conversations || [];
+                if (activeLanguage !== "All") {
+                    filtered = filtered.filter(c => c.detected_languages.includes(activeLanguage));
+                }
+                
+                if (filtered.length === 0) {
+                    previewMessagesList.innerHTML = `<p class="text-secondary" style="padding: 12px;">No conversations found matching language ${activeLanguage}.</p>`;
+                    return;
+                }
+                
+                filtered.forEach((row, i) => {
                     const convCard = document.createElement("div");
                     convCard.className = "preview-conv";
+                    if (row.flagged) {
+                        convCard.style.borderColor = "rgba(239, 68, 68, 0.3)";
+                    }
                     
                     const header = document.createElement("div");
                     header.className = "preview-conv-header";
                     
                     const title = document.createElement("div");
                     title.className = "preview-conv-title";
-                    title.innerText = `CONVERSATION RECORD #${i + 1} (${row.conversation_id || "Unknown ID"})`;
+                    title.innerText = `APPROVED RECORD #${i + 1} (${row.conversation_id || "Unknown ID"})`;
                     header.appendChild(title);
+                    
+                    // Language badge list
+                    const langBadge = document.createElement("span");
+                    langBadge.style.fontSize = "11px";
+                    langBadge.style.background = "rgba(255, 255, 255, 0.05)";
+                    langBadge.style.padding = "2px 8px";
+                    langBadge.style.borderRadius = "4px";
+                    langBadge.style.color = "var(--text-secondary)";
+                    langBadge.innerText = `🌐 ${row.detected_languages.join(", ")}`;
+                    header.appendChild(langBadge);
                     
                     const excludeBtn = document.createElement("button");
                     excludeBtn.className = "btn-exclude";
@@ -318,28 +436,100 @@ document.addEventListener("DOMContentLoaded", () => {
                     });
                     header.appendChild(excludeBtn);
                     convCard.appendChild(header);
+
+                    if (row.flagged) {
+                        const warnDiv = document.createElement("div");
+                        warnDiv.style.background = "rgba(239, 68, 68, 0.1)";
+                        warnDiv.style.border = "1px solid rgba(239, 68, 68, 0.2)";
+                        warnDiv.style.padding = "6px 12px";
+                        warnDiv.style.borderRadius = "4px";
+                        warnDiv.style.marginBottom = "12px";
+                        warnDiv.style.fontSize = "12px";
+                        warnDiv.style.color = "#ef4444";
+                        warnDiv.style.display = "flex";
+                        warnDiv.style.alignItems = "center";
+                        warnDiv.style.gap = "8px";
+                        warnDiv.style.flexWrap = "wrap";
+                        const warnText = document.createElement("span");
+                        warnText.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <strong>New language detected:</strong> ${row.flagged_languages.join(", ")}.`;
+                        warnDiv.appendChild(warnText);
+                        row.flagged_languages.forEach(lang => {
+                            warnDiv.appendChild(createFlaggedControls(lang, version));
+                        });
+                        convCard.appendChild(warnDiv);
+                    }
                     
                     row.messages.forEach(msg => {
-                        const msgDiv = document.createElement("div");
-                        msgDiv.className = "preview-msg";
-                        
-                        const roleSpan = document.createElement("span");
-                        roleSpan.className = `msg-role ${msg.role}`;
-                        roleSpan.innerText = `${msg.role}:`;
-                        
-                        const textSpan = document.createElement("span");
-                        textSpan.className = "msg-text";
-                        textSpan.innerText = msg.content;
-                        
-                        msgDiv.appendChild(roleSpan);
-                        msgDiv.appendChild(textSpan);
-                        convCard.appendChild(msgDiv);
+                        appendMessageRow(convCard, msg);
                     });
                     previewMessagesList.appendChild(convCard);
                 });
             }
+            
+            // Initial call to render approved conversations
+            renderApprovedBrowser();
 
-            // Pending list preview builder
+            // 2. Render Flagged review inbox
+            flaggedMessagesList.innerHTML = "";
+            const flaggedConvs = [];
+            if (data.pending) {
+                data.pending.forEach(c => { if (c.flagged) flaggedConvs.push({ ...c, status: "pending" }); });
+            }
+            if (data.approved_conversations) {
+                data.approved_conversations.forEach(c => { if (c.flagged) flaggedConvs.push({ ...c, status: "approved" }); });
+            }
+            
+            flaggedCountLbl.innerText = flaggedConvs.length;
+            if (flaggedConvs.length > 0) {
+                auditorFlaggedContainer.style.display = "block";
+                flaggedConvs.forEach((row, i) => {
+                    const convCard = document.createElement("div");
+                    convCard.className = "preview-conv";
+                    convCard.style.borderColor = "rgba(239, 68, 68, 0.4)";
+                    
+                    const header = document.createElement("div");
+                    header.className = "preview-conv-header";
+                    
+                    const title = document.createElement("div");
+                    title.className = "preview-conv-title";
+                    title.style.color = "#ef4444";
+                    title.innerText = `FLAGGED RECORD #${i + 1} (${row.conversation_id || "Unknown ID"}) [${row.status.toUpperCase()}]`;
+                    header.appendChild(title);
+                    
+                    convCard.appendChild(header);
+
+                    const warnDiv = document.createElement("div");
+                    warnDiv.style.background = "rgba(239, 68, 68, 0.1)";
+                    warnDiv.style.border = "1px solid rgba(239, 68, 68, 0.2)";
+                    warnDiv.style.padding = "6px 12px";
+                    warnDiv.style.borderRadius = "4px";
+                    warnDiv.style.marginBottom = "12px";
+                    warnDiv.style.fontSize = "12px";
+                    warnDiv.style.color = "#ef4444";
+                    warnDiv.style.display = "flex";
+                    warnDiv.style.alignItems = "center";
+                    warnDiv.style.gap = "8px";
+                    warnDiv.style.flexWrap = "wrap";
+                    
+                    const warnText = document.createElement("span");
+                    warnText.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> <strong>Contains unapproved language(s):</strong> ${row.flagged_languages.join(", ")}.`;
+                    warnDiv.appendChild(warnText);
+                    
+                    row.flagged_languages.forEach(lang => {
+                        warnDiv.appendChild(createFlaggedControls(lang, version));
+                    });
+                    convCard.appendChild(warnDiv);
+                    
+                    row.messages.forEach(msg => {
+                        appendMessageRow(convCard, msg);
+                    });
+                    flaggedMessagesList.appendChild(convCard);
+                });
+            } else {
+                auditorFlaggedContainer.style.display = "none";
+            }
+
+            // 3. Render Pending list (only non-flagged pending, or all pending)
             pendingMessagesList.innerHTML = "";
             if (!data.pending || data.pending.length === 0) {
                 pendingMessagesList.innerHTML = '<p class="text-secondary" style="font-size: 13px; padding: 12px;">No pending conversations require review.</p>';
@@ -347,7 +537,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 data.pending.forEach((row, i) => {
                     const convCard = document.createElement("div");
                     convCard.className = "preview-conv";
-                    convCard.style.borderColor = "rgba(99, 102, 241, 0.15)";
+                    convCard.style.borderColor = row.flagged ? "rgba(239, 68, 68, 0.25)" : "rgba(99, 102, 241, 0.15)";
                     
                     const header = document.createElement("div");
                     header.className = "preview-conv-header";
@@ -357,6 +547,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     title.innerText = `PENDING RECORD #${i + 1} (${row.conversation_id || "Unknown ID"})`;
                     header.appendChild(title);
                     
+                    // Language tag
+                    const langBadge = document.createElement("span");
+                    langBadge.style.fontSize = "10px";
+                    langBadge.style.background = "rgba(255, 255, 255, 0.04)";
+                    langBadge.style.padding = "1px 6px";
+                    langBadge.style.borderRadius = "3px";
+                    langBadge.style.color = "var(--text-secondary)";
+                    langBadge.innerText = `🌐 ${row.detected_languages.join(", ")}`;
+                    header.appendChild(langBadge);
+
                     const approveBtn = document.createElement("button");
                     approveBtn.className = "btn-approve";
                     approveBtn.innerHTML = '<i class="fa-solid fa-plus"></i> Add to Dataset';
@@ -365,22 +565,31 @@ document.addEventListener("DOMContentLoaded", () => {
                     });
                     header.appendChild(approveBtn);
                     convCard.appendChild(header);
+
+                    if (row.flagged) {
+                        const warnDiv = document.createElement("div");
+                        warnDiv.style.background = "rgba(239, 68, 68, 0.08)";
+                        warnDiv.style.border = "1px solid rgba(239, 68, 68, 0.15)";
+                        warnDiv.style.padding = "4px 8px";
+                        warnDiv.style.borderRadius = "4px";
+                        warnDiv.style.marginBottom = "8px";
+                        warnDiv.style.fontSize = "11px";
+                        warnDiv.style.color = "#ef4444";
+                        warnDiv.style.display = "flex";
+                        warnDiv.style.alignItems = "center";
+                        warnDiv.style.gap = "8px";
+                        warnDiv.style.flexWrap = "wrap";
+                        const warnText = document.createElement("span");
+                        warnText.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Requires language approval for: ${row.flagged_languages.join(", ")}.`;
+                        warnDiv.appendChild(warnText);
+                        row.flagged_languages.forEach(lang => {
+                            warnDiv.appendChild(createFlaggedControls(lang, version));
+                        });
+                        convCard.appendChild(warnDiv);
+                    }
                     
                     row.messages.forEach(msg => {
-                        const msgDiv = document.createElement("div");
-                        msgDiv.className = "preview-msg";
-                        
-                        const roleSpan = document.createElement("span");
-                        roleSpan.className = `msg-role ${msg.role}`;
-                        roleSpan.innerText = `${msg.role}:`;
-                        
-                        const textSpan = document.createElement("span");
-                        textSpan.className = "msg-text";
-                        textSpan.innerText = msg.content;
-                        
-                        msgDiv.appendChild(roleSpan);
-                        msgDiv.appendChild(textSpan);
-                        convCard.appendChild(msgDiv);
+                        appendMessageRow(convCard, msg);
                     });
                     pendingMessagesList.appendChild(convCard);
                 });
@@ -669,6 +878,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 alert(`Error clearing: ${data.error}`);
             } else {
                 alert("Clean Slate complete! All normalized logs and datasets wiped.");
+                activeLanguage = "All";
                 loadStatus();
                 // Select first version or reload
                 const version = audVersionSelect.value;
@@ -681,6 +891,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     auditorPreviewContainer.style.display = "none";
                     auditorPendingContainer.style.display = "none";
                     auditorRolesContainer.style.display = "none";
+                    auditorExplorerLayout.style.display = "none";
                 }
             }
         } catch (err) {
@@ -690,6 +901,112 @@ document.addEventListener("DOMContentLoaded", () => {
             cleanSlateBtn.innerHTML = origHtml;
         }
     });
+
+    async function approveLanguage(version, language, replaceWith = null) {
+        try {
+            showConsole(`Authorizing language "${language}"...`);
+            const payload = { version, language };
+            if (replaceWith) {
+                payload.replace_with = replaceWith;
+            }
+            const res = await fetch("/api/approve-language", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.error) {
+                showConsole(`Error approving language: ${data.error}`);
+                alert(`Error: ${data.error}`);
+            } else {
+                if (replaceWith) {
+                    showConsole(`Language "${language}" mapped to "${replaceWith}" and authorized!`);
+                    alert(`Language "${language}" mapped to "${replaceWith}" successfully!`);
+                } else {
+                    showConsole(`Language "${language}" approved successfully! Dataset rebuilt.`);
+                    alert(`Language "${language}" authorized!`);
+                }
+                loadDatasetDetails(version);
+                loadStatus();
+            }
+        } catch (err) {
+            showConsole(`Network error: ${err}`);
+            alert(`Failed to approve language: ${err}`);
+        }
+    }
+
+    function createFlaggedControls(lang, version) {
+        const wrap = document.createElement("div");
+        wrap.style.display = "inline-flex";
+        wrap.style.alignItems = "center";
+        wrap.style.gap = "6px";
+        wrap.style.margin = "4px 8px 4px 0";
+        wrap.style.flexWrap = "wrap";
+
+        const allowBtn = document.createElement("button");
+        allowBtn.className = "btn-approve";
+        allowBtn.style.padding = "3px 8px";
+        allowBtn.style.fontSize = "11px";
+        allowBtn.innerHTML = `<i class="fa-solid fa-check"></i> Allow ${lang}`;
+        allowBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            approveLanguage(version, lang);
+        });
+        wrap.appendChild(allowBtn);
+
+        const mapSelect = document.createElement("select");
+        mapSelect.className = "styled-select";
+        mapSelect.style.padding = "2px 4px";
+        mapSelect.style.fontSize = "11px";
+        mapSelect.style.width = "auto";
+        mapSelect.style.height = "auto";
+        mapSelect.style.color = "var(--text-primary)";
+        mapSelect.style.background = "var(--bg-primary)";
+        mapSelect.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+        mapSelect.innerHTML = `
+            <option value="">Re-classify to...</option>
+            <option value="en - English">en - English</option>
+            <option value="hi - Hindi">hi - Hindi</option>
+            <option value="ta - Tamil">ta - Tamil</option>
+            <option value="gu - Gujarati">gu - Gujarati</option>
+            <option value="mr - Marathi">mr - Marathi</option>
+            <option value="te - Telugu">te - Telugu</option>
+            <option value="kn - Kannada">kn - Kannada</option>
+            <option value="bn - Bengali">bn - Bengali</option>
+            <option value="ml - Malayalam">ml - Malayalam</option>
+            <option value="no lang found - No Language Found">no lang found - No Language Found</option>
+            <option value="CUSTOM">Custom...</option>
+        `;
+        
+        const mapBtn = document.createElement("button");
+        mapBtn.className = "btn-approve";
+        mapBtn.style.padding = "3px 6px";
+        mapBtn.style.fontSize = "11px";
+        mapBtn.innerText = "Map";
+        mapBtn.disabled = true;
+
+        mapSelect.addEventListener("change", () => {
+            mapBtn.disabled = !mapSelect.value;
+        });
+
+        mapBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            let targetLang = mapSelect.value;
+            if (targetLang === "CUSTOM") {
+                const custom = prompt("Enter language in 'code - Proper Name' format (e.g. es - Spanish):");
+                if (!custom || !custom.includes(" - ")) {
+                    alert("Invalid format! Use 'code - Name'.");
+                    return;
+                }
+                targetLang = custom;
+            }
+            approveLanguage(version, lang, targetLang);
+        });
+
+        wrap.appendChild(mapSelect);
+        wrap.appendChild(mapBtn);
+        return wrap;
+    }
 
     // Trigger initial loading
     loadStatus();

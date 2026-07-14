@@ -244,9 +244,37 @@ def run_pipeline(config: dict, step: str = None):
         report = scrubber.process_all()
         logger.info(f"Privacy scrubbing completed. Anonymized files: {report['stats']['total_files_anonymized']}.")
         
-    # 7. Export Step
+    # 7. Annotate Step
+    if run_all or step == "annotate":
+        logger.info("Stage 7: Generating LLM-assisted advanced annotations (intents, sentiment, summaries, languages)...")
+        anonymized_dir = os.path.join(norm_dir, "anonymized")
+        
+        annotator_conf = config.get("annotation", {})
+        if annotator_conf.get("enabled", True):
+            annotator = ConversationAnnotator(
+                input_dir=anonymized_dir,
+                output_dir=datasets_dir,
+                api_key_env=annotator_conf.get("api_key_env", "GROQ_API_KEY"),
+                model=annotator_conf.get("model", "llama-3.1-8b-instant"),
+                intent_filename=annotator_conf.get("intent_filename", "intent_labels.jsonl"),
+                sentiment_filename=annotator_conf.get("sentiment_filename", "sentiment_labels.jsonl"),
+                summary_filename=annotator_conf.get("summary_filename", "summaries.jsonl"),
+                languages_filename=annotator_conf.get("languages_filename", "languages.jsonl"),
+                approved_path=os.path.join(project_root, "approved.json")
+            )
+            counts = annotator.process_all()
+            logger.info(
+                f"Annotation completed: {counts['conversations_processed']} conversations annotated. "
+                f"Intents: {counts['intent_labels_written']}, Sentiments: {counts['sentiment_labels_written']}, "
+                f"Languages: {counts['languages_written']}, "
+                f"Summaries: {counts['summaries_written']}. LLM Succeeded: {counts['llm_calls_succeeded']}, Fallbacks: {counts['fallbacks_executed']}."
+            )
+        else:
+            logger.info("Advanced annotation stage is disabled in configuration.")
+            
+    # 8. Export Step
     if run_all or step == "export":
-        logger.info("Stage 7: Exporting final instruction datasets and diagnostics statistics...")
+        logger.info("Stage 8: Exporting final instruction datasets and diagnostics statistics...")
         anonymized_dir = os.path.join(norm_dir, "anonymized")
         
         dataset_conf = config.get("dataset", {})
@@ -266,32 +294,6 @@ def run_pipeline(config: dict, step: str = None):
         generator.generate_metadata(meta_fn)
         generator.generate_statistics(stats_fn)
         logger.info(f"Exported dataset JSONL, metadata summary, and statistics report to '{datasets_dir}'.")
-        
-    # 8. Annotate Step
-    if run_all or step == "annotate":
-        logger.info("Stage 8: Generating LLM-assisted advanced annotations (intents, sentiment, summaries)...")
-        anonymized_dir = os.path.join(norm_dir, "anonymized")
-        
-        annotator_conf = config.get("annotation", {})
-        if annotator_conf.get("enabled", True):
-            annotator = ConversationAnnotator(
-                input_dir=anonymized_dir,
-                output_dir=datasets_dir,
-                api_key_env=annotator_conf.get("api_key_env", "GROQ_API_KEY"),
-                model=annotator_conf.get("model", "llama-3.1-8b-instant"),
-                intent_filename=annotator_conf.get("intent_filename", "intent_labels.jsonl"),
-                sentiment_filename=annotator_conf.get("sentiment_filename", "sentiment_labels.jsonl"),
-                summary_filename=annotator_conf.get("summary_filename", "summaries.jsonl"),
-                approved_path=os.path.join(project_root, "approved.json")
-            )
-            counts = annotator.process_all()
-            logger.info(
-                f"Annotation completed: {counts['conversations_processed']} conversations annotated. "
-                f"Intents: {counts['intent_labels_written']}, Sentiments: {counts['sentiment_labels_written']}, "
-                f"Summaries: {counts['summaries_written']}. LLM Succeeded: {counts['llm_calls_succeeded']}, Fallbacks: {counts['fallbacks_executed']}."
-            )
-        else:
-            logger.info("Advanced annotation stage is disabled in configuration.")
             
     # 9. RAG Step
     if run_all or step == "rag":
