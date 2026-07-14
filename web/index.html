@@ -273,11 +273,38 @@
                     </div>
                 </div>
 
-                <!-- Preview Grid Conversations -->
-                <div class="preview-panel" id="auditor-preview-container" style="display: none;">
-                    <h2>Instruction Dataset Preview (`conversations.jsonl`)</h2>
-                    <div class="preview-scroller" id="preview-messages-list">
-                        <!-- Messages render dynamically here -->
+                <!-- Multi-Language Explorer Layout -->
+                <div class="auditor-layout" id="auditor-explorer-layout" style="display: none; display: flex; gap: 24px; margin-top: 24px; align-items: flex-start;">
+                    <!-- Left sidebar: Languages Menu -->
+                    <div class="languages-sidebar" style="width: 260px; flex-shrink: 0; background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 8px; padding: 16px;">
+                        <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; font-weight: 600; color: var(--text-primary); border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 8px;">🌐 Language Explorer</h3>
+                        <ul id="languages-list" style="list-style: none; padding: 0; margin: 0;">
+                            <!-- Language items render dynamically -->
+                        </ul>
+                    </div>
+                    
+                    <!-- Right area: Flagged reviewer inbox AND Database Browser -->
+                    <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 24px; width: 100%;">
+                        <!-- Flagged reviewer inbox -->
+                        <div class="preview-panel" id="auditor-flagged-container" style="display: none; border-color: rgba(239, 68, 68, 0.25); margin: 0;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid rgba(239, 68, 68, 0.1); padding-bottom: 8px;">
+                                <h2 style="margin: 0; border: none; padding: 0; color: #ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> Flagged Languages Review Inbox (<span id="flagged-count-lbl">0</span>)</h2>
+                            </div>
+                            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+                                These conversations contain languages that have not been approved for the database yet. Click <strong>Allow Language</strong> to authorize.
+                            </p>
+                            <div class="preview-scroller" id="flagged-messages-list" style="max-height: 250px;">
+                                <!-- Flagged items render here -->
+                            </div>
+                        </div>
+
+                        <!-- Database Browser (all approved conversations) -->
+                        <div class="preview-panel" id="auditor-preview-container" style="margin: 0; width: 100%;">
+                            <h2 id="browser-title-lbl">Database Explorer: Approved Conversations (All)</h2>
+                            <div class="preview-scroller" id="preview-messages-list">
+                                <!-- Approved conversations render dynamically here -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

@@ -11,7 +11,8 @@ class DatasetGenerator:
         output_dir: str,
         version: str = "1.0.0",
         system_prompt: str = None,
-        approved_path: str = None
+        approved_path: str = None,
+        allowed_langs_path: str = None
     ):
         """
         Initialize DatasetGenerator.
@@ -20,12 +21,14 @@ class DatasetGenerator:
         :param version: Version string for the generated dataset (e.g. '1.0.0').
         :param system_prompt: Optional system prompt to prepend to every message history list.
         :param approved_path: Optional path to approved.json whitelist file.
+        :param allowed_langs_path: Path to allowed_languages.json whitelist.
         """
         self.input_dir = os.path.abspath(input_dir)
         self.output_dir = os.path.abspath(output_dir)
         self.version = version
         self.system_prompt = system_prompt
         self.approved_path = approved_path
+        self.allowed_langs_path = allowed_langs_path if allowed_langs_path else os.path.abspath("allowed_languages.json")
         os.makedirs(self.output_dir, exist_ok=True)
 
     def load_conversations(self) -> List[Dict[str, Any]]:
@@ -52,6 +55,46 @@ class DatasetGenerator:
             except Exception:
                 pass
 
+        # Load allowed languages whitelist
+        default_langs = ["en - English", "hi - Hindi", "ta - Tamil"]
+        if not os.path.exists(self.allowed_langs_path):
+            try:
+                with open(self.allowed_langs_path, 'w', encoding='utf-8') as f:
+                    json.dump(default_langs, f, indent=2)
+            except Exception:
+                pass
+                
+        allowed_langs = default_langs
+        if os.path.exists(self.allowed_langs_path):
+            try:
+                with open(self.allowed_langs_path, 'r', encoding='utf-8') as f:
+                    allowed_langs = json.load(f)
+            except Exception:
+                pass
+
+        # Load detected languages per conversation
+        conv_to_langs = {}
+        languages_path = os.path.join(self.output_dir, "languages.jsonl")
+        if os.path.exists(languages_path):
+            try:
+                with open(languages_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.strip():
+                            item = json.loads(line)
+                            cid = item.get("conversation_id")
+                            if cid:
+                                raw_langs = item.get("detected_languages", [])
+                                conv_langs_set = set()
+                                for entry in raw_langs:
+                                    if isinstance(entry, dict):
+                                        for l in entry.get("languages", []):
+                                            conv_langs_set.add(l)
+                                    else:
+                                        conv_langs_set.add(str(entry))
+                                conv_to_langs[cid] = sorted(list(conv_langs_set))
+            except Exception:
+                pass
+
         for filename in sorted(os.listdir(self.input_dir)):
             if filename.endswith(".json"):
                 path = os.path.join(self.input_dir, filename)
@@ -64,6 +107,17 @@ class DatasetGenerator:
                                 continue
                             if self.approved_path and os.path.exists(self.approved_path) and conv_id not in approved:
                                 continue
+                            
+                            # Filter out unallowed languages
+                            langs = conv_to_langs.get(conv_id, [])
+                            is_flagged = False
+                            for l in langs:
+                                if l not in allowed_langs:
+                                    is_flagged = True
+                                    break
+                            if is_flagged:
+                                continue
+                                
                         conversations.append(data)
                 except Exception as e:
                     # Ignore corrupted or invalid JSON files

@@ -806,3 +806,44 @@ body {
 .delta-lbl.plus { color: var(--color-green); }
 .delta-lbl.minus { color: var(--color-red); }
 .delta-lbl.neutral { color: var(--text-secondary); }
+
+/* Language Explorer Sidebar Navigation */
+.lang-item {
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid transparent;
+}
+
+.lang-item:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.lang-item.active {
+    color: var(--accent-glow);
+    background-color: rgba(56, 189, 248, 0.08);
+    border-color: rgba(56, 189, 248, 0.15);
+    text-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+}
+
+.lang-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    color: var(--text-secondary);
+}
+
+.lang-item.active .lang-badge {
+    background: rgba(56, 189, 248, 0.15);
+    color: var(--accent-glow);
+}

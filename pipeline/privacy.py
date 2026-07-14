@@ -198,8 +198,8 @@ class PrivacyScrubber:
             method="POST"
         )
         
-        max_retries = 3
-        backoff = 3.0
+        max_retries = 5
+        backoff = 5.0
         for attempt in range(max_retries):
             try:
                 # Add delay between calls to stay below 30 RPM
@@ -208,11 +208,27 @@ class PrivacyScrubber:
                     res_body = res.read().decode("utf-8")
                     res_json = json.loads(res_body)
                     content_str = res_json["choices"][0]["message"]["content"]
+                    
+                    # Sleep proportionally to tokens consumed to stay below 6k TPM
+                    usage = res_json.get("usage", {})
+                    total_tokens = usage.get("total_tokens", 1000)
+                    sleep_time = max(2.2, (total_tokens / 6000.0) * 60.0)
+                    logger.info(f"Groq API call consumed {total_tokens} tokens. Spacing next call by sleeping {sleep_time:.2f}s...")
+                    time.sleep(sleep_time)
+                    
                     return json.loads(content_str)
             except urllib.error.HTTPError as e:
                 if e.code == 429 and attempt < max_retries - 1:
-                    logger.warning(f"Groq API 429 Rate Limit hit. Retrying in {backoff}s...")
-                    time.sleep(backoff)
+                    retry_after = e.headers.get("retry-after") or e.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            sleep_time = float(retry_after) + 0.5
+                        except Exception:
+                            sleep_time = 60.0
+                    else:
+                        sleep_time = 60.0
+                    logger.warning(f"Groq API 429 Rate Limit hit. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
                     backoff *= 2
                     continue
                 logger.warning(f"Groq LLM Privacy scrubbing failed for conversation '{conv_data.get('conversation_id')}': {e}. Falling back to pattern-only scrubbing.")
