@@ -7,3 +7,4 @@ from .privacy import PrivacyScrubber
 from .dataset_generator import DatasetGenerator
 from .annotator import ConversationAnnotator
 from .rag_generator import RAGGenerator
+from .translator import ConversationTranslator

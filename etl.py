@@ -12,7 +12,8 @@ from connectors import GmailConnector, WhatsAppConnector
 from pipeline import (
     GmailNormalizer, WhatsAppNormalizer, ConversationMerger,
     ThreadBuilder, ConversationValidator, ConversationCleaner,
-    PrivacyScrubber, DatasetGenerator, ConversationAnnotator, RAGGenerator
+    PrivacyScrubber, DatasetGenerator, ConversationAnnotator, RAGGenerator,
+    ConversationTranslator
 )
 
 class JSONFormatter(logging.Formatter):
@@ -272,9 +273,25 @@ def run_pipeline(config: dict, step: str = None):
         else:
             logger.info("Advanced annotation stage is disabled in configuration.")
             
-    # 8. Export Step
+    # 8. Translate Step
+    if run_all or step == "translate":
+        logger.info("Stage 8: Translating regional languages to English using Groq...")
+        anonymized_dir = os.path.join(norm_dir, "anonymized")
+        
+        annotator_conf = config.get("annotation", {})
+        translator = ConversationTranslator(
+            input_dir=anonymized_dir,
+            output_dir=datasets_dir,
+            api_key_env=annotator_conf.get("api_key_env", "GROQ_API_KEY"),
+            model=annotator_conf.get("model", "llama-3.1-8b-instant"),
+            languages_filename=annotator_conf.get("languages_filename", "languages.jsonl")
+        )
+        count = translator.process_all()
+        logger.info(f"Translation completed: {count} message(s) translated to English.")
+            
+    # 9. Export Step
     if run_all or step == "export":
-        logger.info("Stage 8: Exporting final instruction datasets and diagnostics statistics...")
+        logger.info("Stage 9: Exporting final instruction datasets and diagnostics statistics...")
         anonymized_dir = os.path.join(norm_dir, "anonymized")
         
         dataset_conf = config.get("dataset", {})
@@ -295,9 +312,9 @@ def run_pipeline(config: dict, step: str = None):
         generator.generate_statistics(stats_fn)
         logger.info(f"Exported dataset JSONL, metadata summary, and statistics report to '{datasets_dir}'.")
             
-    # 9. RAG Step
+    # 10. RAG Step
     if run_all or step == "rag":
-        logger.info("Stage 9: Creating semantic dialogue segments and knowledge nuggets for RAG...")
+        logger.info("Stage 10: Creating semantic dialogue segments and knowledge nuggets for RAG...")
         anonymized_dir = os.path.join(norm_dir, "anonymized")
         
         rag_conf = config.get("rag", {})
@@ -466,7 +483,7 @@ def main():
     )
     run_parser.add_argument(
         "--step",
-        choices=["ingest", "normalize", "merge", "reconstruct", "clean", "anonymize", "export", "annotate", "rag"],
+        choices=["ingest", "normalize", "merge", "reconstruct", "clean", "anonymize", "annotate", "translate", "export", "rag"],
         default=None,
         help="Run only a specific stage of the ETL pipeline"
     )
