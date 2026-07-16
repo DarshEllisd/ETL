@@ -237,10 +237,11 @@ document.addEventListener("DOMContentLoaded", () => {
             { pattern: "Reconstructing threads", current: "step-reconstruct", prevs: ["step-ingest", "step-normalize", "step-merge"] },
             { pattern: "Stripping signatures", current: "step-clean", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct"] },
             { pattern: "Scrubbing PII", current: "step-anonymize", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean"] },
-            { pattern: "Exporting final instruction datasets", current: "step-export", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize"] },
-            { pattern: "Generating LLM-assisted advanced annotations", current: "step-annotate", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-export"] },
-            { pattern: "Creating semantic dialogue segments", current: "step-rag", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-export", "step-annotate"] },
-            { pattern: "completed successfully.", current: "", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-export", "step-annotate", "step-rag"] }
+            { pattern: "Generating LLM-assisted advanced annotations", current: "step-annotate", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize"] },
+            { pattern: "Translating regional languages", current: "step-translate", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-annotate"] },
+            { pattern: "Exporting final instruction datasets", current: "step-export", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-annotate", "step-translate"] },
+            { pattern: "Creating semantic dialogue segments", current: "step-rag", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-annotate", "step-translate", "step-export"] },
+            { pattern: "completed successfully.", current: "", prevs: ["step-ingest", "step-normalize", "step-merge", "step-reconstruct", "step-clean", "step-anonymize", "step-annotate", "step-translate", "step-export", "step-rag"] }
         ];
 
         mappings.forEach(m => {

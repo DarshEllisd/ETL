@@ -445,6 +445,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             if annotator_conf.get("enabled", True):
                 run_pipeline(config, "annotate")
                 
+            run_pipeline(config, "translate")
             run_pipeline(config, "export")
             
             rag_conf = config.get("rag", {})
@@ -519,6 +520,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     print("All approved conversations are already annotated. Skipping annotation pipeline stage.")
                 
+            run_pipeline(config, "translate")
             run_pipeline(config, "export")
             
             rag_conf = config.get("rag", {})
@@ -608,6 +610,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     print("All approved conversations are already annotated. Skipping annotation pipeline stage.")
                 
+            run_pipeline(config, "translate")
             run_pipeline(config, "export")
             
             rag_conf = config.get("rag", {})
@@ -691,6 +694,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 pass
                                 
             # Rebuild dataset exports and statistics
+            run_pipeline(config, "translate")
             run_pipeline(config, "export")
             
             # Rebuild RAG chunks
@@ -889,6 +893,7 @@ class ETLDashboardHandler(http.server.SimpleHTTPRequestHandler):
             def run_background_pipeline(cfg):
                 try:
                     setup_logging(cfg.get("logging", {}), verbose=False)
+                    run_pipeline(cfg, "translate")
                     run_pipeline(cfg, "export")
                     rag_conf = cfg.get("rag", {})
                     if rag_conf.get("enabled", True):
